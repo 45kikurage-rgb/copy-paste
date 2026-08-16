@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <title>URL改行整形ツール</title>
+  <style>
+    :root{
+      --bg:#f3f4f6; --card:#fff; --text:#111827; --sub:#6b7280;
+      --border:#d1d5db; --btn:#111827; --btnText:#fff; --ok:#166534;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:var(--bg); color:var(--text);
+    }
+    .wrap{max-width:820px;margin:0 auto;padding:16px}
+    h1{font-size:24px;margin:6px 0 4px}
+    .desc{color:var(--sub);font-size:14px;margin:0 0 14px}
+    .card{
+      background:var(--card); border-radius:16px; padding:14px;
+      box-shadow:0 2px 12px rgba(0,0,0,.06); margin-bottom:14px;
+    }
+    label{display:block;font-weight:700;margin-bottom:8px}
+    textarea{
+      width:100%; min-height:220px; resize:vertical; border:1px solid var(--border);
+      border-radius:12px; padding:12px; font-size:16px; line-height:1.6;
+      background:#fff; color:#111827;
+    }
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+    button{
+      border:none; border-radius:12px; padding:13px 16px; font-size:16px;
+      font-weight:700; cursor:pointer;
+    }
+    .primary{background:var(--btn);color:var(--btnText);flex:1;min-width:160px}
+    .secondary{background:#e5e7eb;color:#111827}
+    .status{margin-top:9px;font-size:14px;color:var(--ok);min-height:20px}
+    .count{font-size:13px;color:var(--sub);margin-top:6px}
+    .switchrow{display:flex;align-items:center;gap:8px;margin:4px 0 10px;font-size:14px}
+    input[type="checkbox"]{width:20px;height:20px}
+    .hint{
+      background:#eef2ff;border-radius:12px;padding:10px 12px;font-size:13px;color:#3730a3;
+      margin-top:10px;line-height:1.5
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>URL改行整形ツール</h1>
+    <p class="desc">元データを貼り付けるだけで、「数字 → 改行 → URL → 改行」に自動整形します。</p>
+
+    <div class="card">
+      <label for="input">① ここに貼り付け</label>
+      <textarea id="input" placeholder="例：
+1
+https://example.com/aaa
+2
+https://example.com/bbb"></textarea>
+      <div class="switchrow">
+        <input type="checkbox" id="blankLine" checked>
+        <label for="blankLine" style="margin:0;font-weight:500">数字とURLの間・URLの後に空行を入れる</label>
+      </div>
+      <div class="actions">
+        <button class="secondary" id="clearBtn">クリア</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <label for="output">② 自動整形結果</label>
+      <textarea id="output" readonly></textarea>
+      <div class="count" id="count">0件</div>
+      <div class="actions">
+        <button class="primary" id="copyBtn">整形結果をコピー</button>
+      </div>
+      <div class="status" id="status"></div>
+      <div class="hint">
+        URLがMarkdown形式の <code>[URL](URL)</code> で貼られても、自動で通常のURLに直します。
+      </div>
+    </div>
+  </div>
+
+<script>
+const input = document.getElementById('input');
+const output = document.getElementById('output');
+const blankLine = document.getElementById('blankLine');
+const copyBtn = document.getElementById('copyBtn');
+const clearBtn = document.getElementById('clearBtn');
+const status = document.getElementById('status');
+const count = document.getElementById('count');
+
+function normalizeMarkdownUrls(text){
+  return text.replace(/\[([^\]]*https?:\/\/[^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$2');
+}
+
+function extractPairs(text){
+  text = normalizeMarkdownUrls(text)
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u200b/g, '');
+
+  const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+  const pairs = [];
+  let pendingNum = null;
+
+  for (const line of lines){
+    const numMatch = line.match(/^(\d+)\s*$/);
+    const urlMatch = line.match(/(https?:\/\/[^\s<>"']+)/i);
+
+    if(numMatch){
+      pendingNum = numMatch[1];
+      continue;
+    }
+
+    if(urlMatch){
+      pairs.push({num: pendingNum, url: urlMatch[1]});
+      pendingNum = null;
+      continue;
+    }
+
+    // 同じ行に「数字 URL」がある場合
+    const sameLine = line.match(/^(\d+)\s+(https?:\/\/[^\s<>"']+)/i);
+    if(sameLine){
+      pairs.push({num:sameLine[1], url:sameLine[2]});
+      pendingNum = null;
+    }
+  }
+
+  // より自由な形式の保険：URLだけは拾う
+  if(pairs.length === 0){
+    const urls = text.match(/https?:\/\/[^\s<>"')\]]+/gi) || [];
+    urls.forEach((url, i) => pairs.push({num:String(i+1), url}));
+  }
+
+  return pairs;
+}
+
+function format(){
+  const pairs = extractPairs(input.value);
+  const sep = blankLine.checked ? '\n\n' : '\n';
+  output.value = pairs.map((p, i) => {
+    const n = p.num || String(i+1);
+    return `${n}${sep}${p.url}`;
+  }).join(sep);
+  count.textContent = `${pairs.length}件`;
+  status.textContent = '';
+}
+
+input.addEventListener('input', format);
+blankLine.addEventListener('change', format);
+
+clearBtn.addEventListener('click', () => {
+  input.value = '';
+  output.value = '';
+  count.textContent = '0件';
+  status.textContent = '';
+  input.focus();
+});
+
+copyBtn.addEventListener('click', async () => {
+  if(!output.value){
+    status.textContent = 'コピーする内容がありません。';
+    return;
+  }
+  try{
+    await navigator.clipboard.writeText(output.value);
+    status.textContent = 'コピーしました！';
+  }catch(e){
+    output.removeAttribute('readonly');
+    output.select();
+    document.execCommand('copy');
+    output.setAttribute('readonly','');
+    status.textContent = 'コピーしました！';
+  }
+});
+
+format();
+</script>
+</body>
+</html>
