@@ -2,225 +2,585 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#f7d7a4">
-<title>URL改行整形ツール</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fde0b6">
+<meta name="description" content="貼り付けたURLを段落ごとに読みやすく整形するツール">
+<title>ポータルサイト</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./shisa-maskable.png">
+<link rel="apple-touch-icon" href="./shisa-maskable.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Yomogi&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#f7d7a4;
-  --panel:#fbf8f1;
-  --ink:#3b3028;
-  --line:#c9c0b4;
-  --accent:#f2b978;
-  --dark:#43372e;
-  --white:#fffdf8;
+  --bg:#fde0b6;
+  --card:#fffaf1;
+  --text:#282018;
+  --sub:#776a5e;
+  --border:#8c7762;
+  --btn:#3c3026;
+  --btn-soft:#fff4df;
+  --ok:#94714f;
+  --top-pad:max(9px,env(safe-area-inset-top));
+  --action-h:76px;
+  --footer-h:126px;
+  --bottom-gap:var(--top-pad);
 }
 *{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:"Noto Sans JP","Yu Gothic",system-ui,sans-serif}
-button,input,textarea{font:inherit;color:inherit}
-button{cursor:pointer;-webkit-tap-highlight-color:transparent}
-.app{max-width:720px;margin:0 auto;min-height:100vh;padding:14px 16px 20px}
-.screen{display:block}
-.screen[hidden]{display:none!important}
-.card{background:rgba(255,253,248,.9);border:3px solid var(--line);border-radius:28px;padding:18px;margin-bottom:16px;box-shadow:0 4px 0 rgba(70,54,40,.10)}
-.section-title{font-size:25px;font-weight:700;margin-bottom:18px}
-textarea{width:100%;resize:none;border:3px solid #d5cec2;border-radius:22px;background:#fffefa;padding:18px;font-size:22px;line-height:1.75;outline:none}
-#output{height:400px}
-#input{height:260px}
-textarea::placeholder{color:#aaa29b}
-.action-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:12px;margin:2px 0 18px}
-.action-btn,.count-box{
-  min-height:128px;border:4px solid var(--ink);border-radius:22px;background:#fffaf0;
-  display:flex;align-items:center;justify-content:center;text-align:center;font-size:22px;
-  box-shadow:0 5px 0 rgba(70,54,40,.18);padding:8px
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  font-family:"Yomogi","Klee One","Yu Mincho",cursive;
+  background:var(--bg);
+  color:var(--text);
 }
-.action-btn.dark{background:var(--dark);color:white}
-.action-btn.accent{background:var(--accent)}
-.calc-button{flex-direction:column;gap:5px;background:#f5b86f}
-.calc-icon{font-size:34px;line-height:1}
-.count-box{font-variant-numeric:tabular-nums}
-.paste-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
-.paste-title{font-size:25px;font-weight:700}
-.check{display:flex;align-items:center;gap:8px;font-size:19px;white-space:nowrap}
-.check input{width:28px;height:28px;accent-color:var(--dark)}
-.links{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.link-tile{min-height:112px;border:3px solid var(--line);border-radius:18px;background:#fffaf3;display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none;color:inherit;font-size:18px}
-.status{min-height:24px;text-align:center;font-size:15px}
+button,textarea,input{font:inherit}
+button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.app{
+  height:100dvh;
+  max-width:820px;
+  margin:0 auto;
+  padding:var(--top-pad) 10px calc(var(--footer-h) + env(safe-area-inset-bottom) + var(--bottom-gap) + 10px);
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+  overflow:hidden;
+}
+.header{display:flex;align-items:center;min-height:36px;padding:0 3px}
+h1{margin:0;font-size:1.18rem;font-weight:700;letter-spacing:.02em}
+.card{
+  min-height:0;
+  background:rgba(255,250,241,.96);
+  border:2px solid rgba(140,119,98,.42);
+  border-radius:18px;
+  padding:11px;
+  box-shadow:0 4px 14px rgba(88,58,31,.10);
+  display:grid;
+  gap:7px;
+  overflow:hidden;
+}
+.result-card{
+  flex:none;
+  height:calc(50dvh - var(--top-pad) - 92px - (var(--bottom-gap) / 2));
+  grid-template-rows:auto minmax(0,1fr);
+}
+.input-card{
+  flex:1;
+  min-height:0;
+  grid-template-rows:auto minmax(0,1fr);
+}
+.section-head{display:flex;align-items:flex-start;justify-content:space-between;min-height:30px;gap:8px}
+label{font-size:1.02rem;font-weight:700;letter-spacing:.02em}
+textarea{
+  width:100%;
+  height:100%;
+  min-height:0;
+  resize:none;
+  border:2px solid rgba(140,119,98,.42);
+  border-radius:13px;
+  padding:10px 12px;
+  font-size:1rem;
+  line-height:1.55;
+  background:#fffdf8;
+  color:var(--text);
+  outline:none;
+}
+textarea:focus{border-color:var(--border);box-shadow:0 0 0 3px rgba(140,119,98,.14)}
+textarea::placeholder{color:#9b8f84;opacity:1}
+.action-strip{
+  flex:none;
+  width:100%;
+  height:var(--action-h);
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:7px;
+}
+.action-btn,.count-btn{
+  min-width:0;
+  height:var(--action-h);
+  padding:7px 3px;
+  border:2px solid var(--btn);
+  border-radius:13px;
+  font-size:clamp(.72rem,3.1vw,.92rem);
+  line-height:1.25;
+  font-weight:700;
+  letter-spacing:0;
+  color:#fff;
+  background:var(--btn);
+  box-shadow:0 3px 0 rgba(60,48,38,.24);
+}
+.calc-open-btn{grid-column:1;color:var(--btn);background:#f6bf83}
+.count-btn{grid-column:2;color:var(--btn);background:#fffaf1;cursor:default}
+.copy-btn{grid-column:3}
+.share-btn{grid-column:4;color:var(--btn);background:#f6bf83}
+.clear-btn{grid-column:5;color:var(--btn);background:var(--btn-soft)}
+.action-btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(60,48,38,.24)}
+.status{color:var(--ok);font-size:.82rem;font-weight:700;white-space:nowrap}
+.option{display:flex;align-items:center;gap:5px;color:var(--sub);font-size:.86rem;white-space:nowrap}
+.option input{width:19px;height:19px;margin:0;accent-color:var(--btn)}
+.option label{font-size:.86rem;font-weight:700}
+.quick-links{
+  position:fixed;
+  z-index:10;
+  left:50%;
+  bottom:var(--bottom-gap);
+  width:min(100%,820px);
+  height:calc(var(--footer-h) + env(safe-area-inset-bottom));
+  transform:translateX(-50%);
+  padding:6px 8px calc(6px + env(safe-area-inset-bottom));
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:7px;
+  background:rgba(253,224,182,.97);
+  border-top:2px solid rgba(140,119,98,.5);
+  box-shadow:0 -5px 16px rgba(88,58,31,.12);
+  backdrop-filter:blur(8px);
+}
+.quick-item{
+  min-width:0;
+  display:grid;
+  grid-template-rows:27px minmax(0,1fr);
+  gap:4px;
+  justify-items:center;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.quick-item:active .quick-label,.quick-item:active .quick-link{background:#f9ebd5}
+.quick-label{
+  width:100%;
+  height:27px;
+  padding:2px 3px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  border:2px solid rgba(140,119,98,.55);
+  border-radius:8px;
+  background:#fffaf1;
+  font-size:.72rem;
+  line-height:1.1;
+  font-weight:700;
+}
+.quick-link{
+  min-width:0;
+  width:min(100%,83px);
+  aspect-ratio:1;
+  padding:0;
+  display:grid;
+  place-items:center;
+  border:2px solid rgba(140,119,98,.55);
+  border-radius:13px;
+  color:var(--text);
+  background:#fffaf1;
+  overflow:hidden;
+}
+.quick-link:active{background:#f9ebd5}
+.quick-icon-frame{
+  width:100%;
+  height:100%;
+  border-radius:8px;
+  overflow:hidden;
+  display:grid;
+  place-items:center;
+}
+.quick-icon{
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  object-position:50% 50%;
+  display:block;
+}
+.auth-gate{
+  position:fixed;
+  z-index:1000;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  background:var(--bg);
+}
+.auth-gate.is-open{display:flex}
+.auth-box{
+  width:min(100%,360px);
+  padding:20px;
+  display:grid;
+  gap:12px;
+  background:#fffaf1;
+  border:2px solid rgba(140,119,98,.55);
+  border-radius:18px;
+  box-shadow:0 7px 22px rgba(88,58,31,.16);
+}
+.auth-title{margin:0;text-align:center;font-size:1.1rem;font-weight:700}
+.auth-input{
+  width:100%;
+  height:48px;
+  padding:8px 12px;
+  border:2px solid rgba(140,119,98,.55);
+  border-radius:12px;
+  background:#fffdf8;
+  color:var(--text);
+  font-size:1rem;
+  outline:none;
+}
+.auth-input:focus{border-color:var(--border);box-shadow:0 0 0 3px rgba(140,119,98,.14)}
+.auth-submit{
+  height:48px;
+  border:2px solid var(--btn);
+  border-radius:12px;
+  background:var(--btn);
+  color:#fff;
+  font-weight:700;
+}
+.auth-error{min-height:1.2em;text-align:center;color:#9a3d31;font-size:.88rem;font-weight:700}
+@media(max-width:380px){
+  .app{padding-left:7px;padding-right:7px;gap:7px}
+  .card{padding:8px}
+  .action-strip{gap:5px}
+  .action-btn{font-size:.7rem}
+  .quick-links{gap:5px;padding-left:5px;padding-right:5px}
+}
+@media(max-height:700px){
+  h1{font-size:1.04rem}
+  .card{padding:8px;gap:5px}
+  label{font-size:.94rem}
+  textarea{font-size:.92rem;padding:7px 9px}
+}
 
-/* calculator */
-.calc-page{padding-bottom:18px}
-.calc-header{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin-bottom:12px}
-.back-small,.calc-title,.calc-head-icon{border:3px solid var(--ink);background:#fffaf0;min-height:74px;display:flex;align-items:center;justify-content:center;border-radius:18px;font-weight:700}
-.back-small{padding:0 20px;font-size:24px}
-.calc-title{font-size:34px}
-.calc-head-icon{width:76px;font-size:34px;background:var(--accent)}
-.calc-note{background:var(--dark);color:white;border:3px solid var(--ink);border-radius:16px;padding:18px;text-align:center;font-size:21px;line-height:1.6;margin-bottom:12px}
-.calc-table{border:3px solid var(--ink);border-radius:18px;overflow:hidden;background:#fff8e8;margin-bottom:14px}
-.calc-row{display:grid;grid-template-columns:1fr 1.15fr;min-height:78px;border-bottom:1px solid #9f968b}
-.calc-row:last-child{border-bottom:none}
-.calc-row.head{background:var(--dark);color:white;min-height:64px;font-weight:700}
-.calc-cell{display:flex;align-items:center;justify-content:center;padding:8px;font-size:24px}
-.calc-cell+ .calc-cell{border-left:1px solid #9f968b}
-.qty-input{width:95px;max-width:52%;height:54px;border:3px solid var(--ink);border-radius:10px;background:white;text-align:center;font-size:24px}
-.calc-price{font-size:27px;font-weight:700}
-.unit-panel{border:3px solid var(--ink);border-radius:18px;overflow:hidden;background:var(--dark);color:white;margin-bottom:8px}
-.unit-row{display:grid;grid-template-columns:150px 1fr 55px;align-items:center;min-height:86px}
-.unit-row+ .unit-row{border-top:1px solid #aaa39a}
-.unit-label{text-align:center;font-size:25px}
-.unit-input,.unit-result{height:58px;margin:10px;border:0;border-radius:8px;background:white;color:#222;text-align:right;padding:0 16px;font-size:28px;min-width:0}
-.unit-result{background:#ddd;display:flex;align-items:center;justify-content:flex-end}
-.unit-yen{text-align:center;font-size:24px}
-.unit-help{font-size:17px;padding:10px 8px 16px}
-.mascot-area{display:grid;grid-template-columns:220px 1fr;align-items:center;gap:12px;margin:12px 0}
-.mascot-area img{width:100%;max-width:220px;display:block;border-radius:12px}
-.bubble{background:#fffdf8;border:4px solid var(--ink);border-radius:14px;padding:24px;font-size:21px;font-weight:700;line-height:1.55}
-.back-wide{width:100%;min-height:96px;border:4px solid var(--ink);border-radius:18px;background:var(--dark);color:white;font-size:30px;font-weight:700}
+/* ===== 計算表 ===== */
+.calculator-screen{
+  position:fixed;
+  z-index:50;
+  inset:0;
+  width:100%;
+  height:100dvh;
+  background:var(--bg);
+  display:none;
+  overflow:hidden;
+}
+.calculator-screen.is-open{display:block}
+.calc-wrap{
+  width:min(100%,820px);
+  height:100%;
+  margin:0 auto;
+  padding:var(--top-pad) 10px calc(8px + env(safe-area-inset-bottom));
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) auto auto;
+  gap:8px;
+}
+.calc-top{
+  display:grid;
+  grid-template-columns:88px minmax(0,1fr) 62px;
+  align-items:center;
+  gap:7px;
+}
+.calc-back-top,.calc-title-box,.calc-icon-box{
+  min-height:52px;
+  border:2px solid var(--btn);
+  border-radius:13px;
+  background:#fffaf1;
+  color:var(--text);
+  font-weight:700;
+}
+.calc-back-top{font-size:.96rem}
+.calc-title-box{display:grid;place-items:center;font-size:1.34rem}
+.calc-icon-box{display:grid;place-items:center;background:#f6bf83}
+.calculator-glyph{
+  width:30px;height:35px;border:2px solid currentColor;border-radius:3px;
+  display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:9px repeat(2,1fr);
+  gap:2px;padding:3px;line-height:1
+}
+.calculator-glyph>span{grid-column:1/-1;border:1.5px solid currentColor;border-radius:1px}
+.calculator-glyph>i{display:block;border:1px solid currentColor;border-radius:1px}
+.calculator-glyph.action{width:27px;height:31px;margin:0 auto 3px}
+.calc-table{
+  min-height:0;
+  border:2px solid rgba(140,119,98,.55);
+  border-radius:16px;
+  overflow:hidden;
+  background:#fffaf1;
+  display:grid;
+  grid-template-rows:46px repeat(5,minmax(44px,1fr));
+}
+.calc-row{
+  min-height:0;
+  display:grid;
+  grid-template-columns:42% 58%;
+  border-bottom:1px solid rgba(140,119,98,.45);
+}
+.calc-row:last-child{border-bottom:0}
+.calc-row.calc-head{background:var(--btn);color:#fff;font-weight:700}
+.calc-cell{
+  min-width:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  padding:4px 7px;
+  font-size:clamp(.98rem,4vw,1.18rem);
+  font-weight:700;
+}
+.calc-cell + .calc-cell{border-left:1px solid rgba(140,119,98,.45)}
+.calc-amount{justify-content:flex-end;padding-right:11%}
+.free-qty{
+  width:74px;
+  max-width:58%;
+  height:38px;
+  border:2px solid rgba(140,119,98,.68);
+  border-radius:8px;
+  background:#fffdf8;
+  text-align:center;
+  outline:none;
+}
+.free-qty:focus,.unit-input:focus{border-color:var(--border);box-shadow:0 0 0 3px rgba(140,119,98,.14)}
+.calc-control-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 90px;
+  gap:7px;
+  align-items:stretch;
+}
+.unit-inline{
+  min-width:0;
+  min-height:62px;
+  border:2px solid var(--btn);
+  border-radius:13px;
+  background:var(--btn);
+  color:#fff;
+  display:grid;
+  grid-template-columns:auto minmax(54px,1fr) auto auto minmax(58px,1fr) auto;
+  gap:5px;
+  align-items:center;
+  padding:6px 7px;
+}
+.unit-label{font-size:clamp(.75rem,3vw,.92rem);font-weight:700;white-space:nowrap}
+.unit-input,.unit-result{
+  width:100%;
+  min-width:0;
+  height:38px;
+  border:0;
+  border-radius:7px;
+  padding:0 6px;
+  background:#fffdf8;
+  color:var(--text);
+  text-align:right;
+  font-size:clamp(.82rem,3.3vw,1rem);
+}
+.unit-result{display:flex;align-items:center;justify-content:flex-end;background:#e9e1d8}
+.unit-yen{font-size:.78rem;white-space:nowrap}
+.calc-back-inline{
+  min-height:62px;
+  border:2px solid var(--btn);
+  border-radius:13px;
+  background:var(--btn);
+  color:#fff;
+  font-size:.9rem;
+  font-weight:700;
+}
+.calc-mascot-row{
+  min-height:0;
+  display:grid;
+  grid-template-columns:96px minmax(0,1fr);
+  gap:7px;
+  align-items:center;
+}
+.calc-mascot{
+  width:96px;
+  height:96px;
+  object-fit:contain;
+  display:block;
+}
+.calc-bubble{
+  min-height:74px;
+  display:flex;
+  align-items:center;
+  padding:9px 12px;
+  border:2px solid rgba(140,119,98,.68);
+  border-radius:13px;
+  background:#fffaf1;
+  font-size:clamp(.76rem,3vw,.92rem);
+  line-height:1.45;
+  font-weight:700;
+}
+@media(max-height:700px){
+  .calc-wrap{gap:5px;padding-top:6px;padding-bottom:6px}
+  .calc-top{grid-template-columns:80px minmax(0,1fr) 56px;gap:5px}
+  .calc-back-top,.calc-title-box,.calc-icon-box{min-height:44px}
+  .calc-title-box{font-size:1.12rem}
+  .calculator-glyph{width:26px;height:30px}
+  .calc-table{grid-template-rows:39px repeat(5,minmax(38px,1fr))}
+  .calc-cell{font-size:.92rem;padding:3px 5px}
+  .free-qty{height:33px;width:66px}
+  .unit-inline,.calc-back-inline{min-height:54px}
+  .unit-input,.unit-result{height:33px}
+  .calc-mascot-row{grid-template-columns:78px minmax(0,1fr)}
+  .calc-mascot{width:78px;height:78px}
+  .calc-bubble{min-height:62px;font-size:.76rem;padding:7px 9px}
+}
 
-@media(max-width:640px){
-  .app{padding:12px 14px 18px}
-  .card{padding:16px;border-radius:24px}
-  .section-title,.paste-title{font-size:22px}
-  #output{height:42vh;min-height:300px}
-  #input{height:240px}
-  .action-row{gap:8px}
-  .action-btn,.count-box{min-height:116px;border-width:3px;border-radius:18px;font-size:18px;padding:5px}
-  .calc-icon{font-size:29px}
-  .calc-header{grid-template-columns:92px 1fr 68px}
-  .back-small{font-size:19px;padding:0 8px}
-  .calc-title{font-size:29px}
-  .calc-note{font-size:18px}
-  .calc-cell{font-size:22px}
-  .unit-row{grid-template-columns:105px 1fr 42px}
-  .unit-label{font-size:20px}
-  .unit-input,.unit-result{font-size:23px;margin:9px}
-  .mascot-area{grid-template-columns:140px 1fr}
-  .bubble{font-size:18px;padding:18px}
-}
-@media(max-width:440px){
-  .app{padding-left:10px;padding-right:10px}
-  .action-row{gap:6px}
-  .action-btn,.count-box{min-height:102px;font-size:16px;border-radius:16px}
-  .calc-icon{font-size:26px}
-  .card{padding:14px}
-  textarea{font-size:18px;padding:15px}
-  #output{height:390px}
-  #input{height:250px}
-  .calc-header{grid-template-columns:82px 1fr 58px}
-  .back-small{font-size:17px}
-  .calc-title{font-size:26px}
-  .calc-head-icon{width:58px;font-size:28px}
-  .calc-row{min-height:70px}
-  .calc-cell{font-size:20px}
-  .qty-input{width:80px;height:50px}
-  .unit-row{grid-template-columns:90px 1fr 38px}
-  .unit-label{font-size:18px}
-  .mascot-area{grid-template-columns:115px 1fr}
-  .bubble{font-size:16px;padding:14px}
-}
 </style>
 </head>
 <body>
+<div class="auth-gate" id="authGate" aria-modal="true" role="dialog" aria-labelledby="authTitle">
+  <form class="auth-box" id="authForm">
+    <h2 class="auth-title" id="authTitle">パスワード</h2>
+    <input class="auth-input" id="authPassword" type="password" inputmode="numeric" autocomplete="current-password" aria-label="パスワード" placeholder="パスワードを入力">
+    <button class="auth-submit" type="submit">ログイン</button>
+    <div class="auth-error" id="authError" aria-live="polite"></div>
+  </form>
+</div>
 <main class="app">
+  <header class="header" aria-hidden="true"></header>
 
-<section id="homeScreen" class="screen">
-  <section class="card">
-    <div class="section-title">▶整形結果</div>
+  <section class="card result-card">
+    <div class="section-head">
+      <label for="output">▶整形結果</label>
+      <div class="status" id="status" aria-live="polite"></div>
+    </div>
     <textarea id="output" readonly placeholder="貼り付けた文字列の&#10;段落ごとに改行を追加する"></textarea>
   </section>
 
-  <div class="action-row">
-    <button id="openCalc" class="action-btn calc-button" type="button" aria-label="計算表を開く">
-      <span class="calc-icon">🧮</span><span>計算表</span>
+  <div class="action-strip">
+    <button class="action-btn calc-open-btn" id="openCalcBtn" type="button" aria-label="計算表を開く">
+      <span class="calculator-glyph action" aria-hidden="true"><span></span><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <span>計算表</span>
     </button>
-    <div id="count" class="count-box">０件</div>
-    <button id="copyBtn" class="action-btn dark" type="button">コピー</button>
-    <button id="shareBtn" class="action-btn accent" type="button">共有/<br>サイト</button>
-    <button id="clearBtn" class="action-btn" type="button">クリア</button>
+    <button class="count-btn" id="count" type="button" aria-live="polite">０件</button>
+    <button class="action-btn copy-btn" id="copyBtn" type="button">コピー</button>
+    <button class="action-btn share-btn" id="shareBtn" type="button">共有/<br>サイト</button>
+    <button class="action-btn clear-btn" id="clearBtn" type="button">クリア</button>
   </div>
-  <div id="status" class="status" aria-live="polite"></div>
 
-  <section class="card">
-    <div class="paste-head">
-      <div class="paste-title">▶貼りつけ</div>
-      <label class="check"><input id="blankLine" type="checkbox" checked>空行あり</label>
+  <section class="card input-card">
+    <div class="section-head">
+      <label for="input">▶貼りつけ</label>
+      <div class="option">
+        <input type="checkbox" id="blankLine" checked>
+        <label for="blankLine">空行あり</label>
+      </div>
     </div>
     <textarea id="input" placeholder="1&#10;https://example.com/aaa&#10;2&#10;https://example.com/bbb"></textarea>
   </section>
-
-  <nav class="links" aria-label="リンク">
-    <a class="link-tile" href="#" id="link1">すぷし</a>
-    <a class="link-tile" href="#" id="link2">画像加工</a>
-    <a class="link-tile" href="#" id="link3">すくしょ</a>
-    <a class="link-tile" href="#" id="link4">リンク4</a>
-  </nav>
-</section>
-
-<section id="calcScreen" class="screen calc-page" hidden>
-  <header class="calc-header">
-    <button class="back-small js-back" type="button">◀ 戻る</button>
-    <div class="calc-title">計算表</div>
-    <div class="calc-head-icon">🧮</div>
-  </header>
-
-  <div class="calc-note">下の単価を入力すると<br>各本数の金額が自動で計算されます。</div>
-
-  <div class="calc-table">
-    <div class="calc-row head">
-      <div class="calc-cell">本数</div>
-      <div class="calc-cell">金額（自動計算）</div>
-    </div>
-    <div class="calc-row"><div class="calc-cell">5本</div><div class="calc-cell calc-price" data-qty="5">0円</div></div>
-    <div class="calc-row"><div class="calc-cell">10本</div><div class="calc-cell calc-price" data-qty="10">0円</div></div>
-    <div class="calc-row"><div class="calc-cell">20本</div><div class="calc-cell calc-price" data-qty="20">0円</div></div>
-    <div class="calc-row"><div class="calc-cell">24本</div><div class="calc-cell calc-price" data-qty="24">0円</div></div>
-    <div class="calc-row">
-      <div class="calc-cell"><strong>自由入力</strong>&nbsp;<input id="freeQty" class="qty-input" type="number" min="0" inputmode="numeric" aria-label="自由入力の本数">&nbsp;本</div>
-      <div id="freePrice" class="calc-cell calc-price">0円</div>
-    </div>
-  </div>
-
-  <div class="unit-panel">
-    <div class="unit-row">
-      <div class="unit-label">単価</div>
-      <input id="unitPrice" class="unit-input" type="number" min="0" step="1" inputmode="numeric" placeholder="0" aria-label="単価">
-      <div class="unit-yen">円</div>
-    </div>
-    <div class="unit-row">
-      <div class="unit-label">× 80%</div>
-      <output id="unit80" class="unit-result">0</output>
-      <div class="unit-yen">円</div>
-    </div>
-  </div>
-  <div class="unit-help">※ 単価の80%の金額を表示します</div>
-
-  <div class="mascot-area">
-    <img src="./calculator-mascot.png" alt="計算表のキャラクター">
-    <div class="bubble">単価を入力すると<br>各本数の金額が自動で計算されるよ！</div>
-  </div>
-
-  <button class="back-wide js-back" type="button">◀ 戻る</button>
-</section>
-
 </main>
 
-<script>
-const input = document.getElementById('input');
-const output = document.getElementById('output');
-const blankLine = document.getElementById('blankLine');
-const copyBtn = document.getElementById('copyBtn');
-const clearBtn = document.getElementById('clearBtn');
-const status = document.getElementById('status');
-const count = document.getElementById('count');
+<nav class="quick-links" aria-label="固定リンク">
+  <div class="quick-item" role="button" tabindex="0">
+    <div class="quick-label">すぷし</div>
+    <button class="quick-link" type="button" data-url="https://docs.google.com/spreadsheets/d/1ctavkgr8xwdAkInTCMifZzfIYvzkeuYX/edit" aria-label="すぷしを開く">
+      <span class="quick-icon-frame"><img class="quick-icon" src="./link-1-transparent.png" alt=""></span>
+    </button>
+  </div>
+  <div class="quick-item" role="button" tabindex="0">
+    <div class="quick-label">画像加工</div>
+    <button class="quick-link" type="button" data-url="https://yahoo-framev2.45kikurage.workers.dev" aria-label="画像加工を開く">
+      <span class="quick-icon-frame"><img class="quick-icon" src="./link-2-transparent.png" alt=""></span>
+    </button>
+  </div>
+  <div class="quick-item" role="button" tabindex="0">
+    <div class="quick-label">すくしょ</div>
+    <button class="quick-link" type="button" data-url="https://coupon-capture.45kikurage.workers.dev" aria-label="すくしょを開く">
+      <span class="quick-icon-frame"><img class="quick-icon" src="./link-3-transparent.png" alt=""></span>
+    </button>
+  </div>
+  <div class="quick-item" role="button" tabindex="0">
+    <div class="quick-label">リンク4</div>
+    <button class="quick-link" type="button" data-url="https://line.me/ti/p/xU-RuP-Jua" aria-label="リンク4を開く">
+      <span class="quick-icon-frame"><img class="quick-icon" src="./link-4-transparent.png" alt=""></span>
+    </button>
+  </div>
+</nav>
 
-function toFullWidthDigits(value){
-  return String(value).replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 0xFEE0));
+
+<section class="calculator-screen" id="calculatorScreen" aria-hidden="true">
+  <div class="calc-wrap">
+    <header class="calc-top">
+      <button class="calc-back-top jsCalcBack" type="button">◀ 戻る</button>
+      <div class="calc-title-box">計算表</div>
+      <div class="calc-icon-box" aria-hidden="true">
+        <span class="calculator-glyph"><span></span><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      </div>
+    </header>
+
+    <div class="calc-table" role="table" aria-label="本数別計算表">
+      <div class="calc-row calc-head" role="row">
+        <div class="calc-cell" role="columnheader">本数</div>
+        <div class="calc-cell" role="columnheader">金額（自動計算）</div>
+      </div>
+      <div class="calc-row" role="row"><div class="calc-cell">5本</div><div class="calc-cell calc-amount" data-qty="5">0円</div></div>
+      <div class="calc-row" role="row"><div class="calc-cell">10本</div><div class="calc-cell calc-amount" data-qty="10">0円</div></div>
+      <div class="calc-row" role="row"><div class="calc-cell">20本</div><div class="calc-cell calc-amount" data-qty="20">0円</div></div>
+      <div class="calc-row" role="row"><div class="calc-cell">24本</div><div class="calc-cell calc-amount" data-qty="24">0円</div></div>
+      <div class="calc-row" role="row">
+        <div class="calc-cell"><span>自由入力</span><input id="freeQty" class="free-qty" type="number" inputmode="numeric" min="0" step="1" aria-label="自由入力の本数"><span>本</span></div>
+        <div class="calc-cell calc-amount" id="freeAmount">0円</div>
+      </div>
+    </div>
+
+    <div class="calc-control-row">
+      <div class="unit-inline">
+        <span class="unit-label">単価</span>
+        <input id="unitPrice" class="unit-input" type="number" inputmode="numeric" min="0" step="1" placeholder="0" aria-label="単価">
+        <span class="unit-yen">円</span>
+        <span class="unit-label">×80%</span>
+        <output id="unit80" class="unit-result">0</output>
+        <span class="unit-yen">円</span>
+      </div>
+      <button class="calc-back-inline jsCalcBack" type="button">▶ 戻る</button>
+    </div>
+
+    <div class="calc-mascot-row">
+      <img class="calc-mascot" src="./calculator-mascot.png" alt="計算表のキャラクター">
+      <div class="calc-bubble">単価を入力すると<br>各本数の金額が自動で計算されるよ！</div>
+    </div>
+  </div>
+</section>
+
+<script>
+const input=document.getElementById('input');
+const output=document.getElementById('output');
+const blankLine=document.getElementById('blankLine');
+const copyBtn=document.getElementById('copyBtn');
+const shareBtn=document.getElementById('shareBtn');
+const clearBtn=document.getElementById('clearBtn');
+const status=document.getElementById('status');
+const count=document.getElementById('count');
+const authGate=document.getElementById('authGate');
+const authForm=document.getElementById('authForm');
+const authPassword=document.getElementById('authPassword');
+const authError=document.getElementById('authError');
+const AUTH_KEY='portal-auth-ok-v1';
+const AUTH_PASSWORD='19781211';
+
+function openAuthIfNeeded(){
+  if(localStorage.getItem(AUTH_KEY)==='1') return;
+  authGate.classList.add('is-open');
+  document.body.style.overflow='hidden';
+  setTimeout(()=>authPassword.focus(),0);
 }
+authForm.addEventListener('submit',e=>{
+  e.preventDefault();
+  if(authPassword.value===AUTH_PASSWORD){
+    localStorage.setItem(AUTH_KEY,'1');
+    authGate.classList.remove('is-open');
+    document.body.style.overflow='';
+    authError.textContent='';
+    authPassword.value='';
+  }else{
+    authError.textContent='パスワードが違います';
+    authPassword.select();
+  }
+});
+
 function normalizeMarkdownUrls(text){
   return text.replace(/\[([^\]]*https?:\/\/[^\]]+)\]\((https?:\/\/[^)]+)\)/g,'$2');
 }
 function extractPairs(text){
-  text = normalizeMarkdownUrls(text).replace(/\r\n?/g,'\n').replace(/\u200b/g,'');
-  const lines = text.split('\n').map(s=>s.trim()).filter(Boolean);
+  text=normalizeMarkdownUrls(text).replace(/\r\n?/g,'\n').replace(/\u200b/g,'');
+  const lines=text.split('\n').map(s=>s.trim()).filter(Boolean);
   const pairs=[]; let pendingNum=null;
   for(const line of lines){
     const sameLine=line.match(/^(\d+)\s+(https?:\/\/[^\s<>"']+)/i);
@@ -240,68 +600,91 @@ function format(){
   const pairs=extractPairs(input.value);
   const sep=blankLine.checked?'\n\n':'\n';
   output.value=pairs.map((p,i)=>`${p.num||String(i+1)}${sep}${p.url}`).join(sep);
-  count.textContent=`${toFullWidthDigits(pairs.length)}件`;
+  count.textContent=`${String(pairs.length).replace(/[0-9]/g,d=>String.fromCharCode(d.charCodeAt(0)+0xFEE0))}件`;
   status.textContent='';
 }
+function clearAll(){
+  input.value='';
+  output.value='';
+  count.textContent='０件';
+  status.textContent='';
+  input.focus();
+}
+
 input.addEventListener('input',format);
 blankLine.addEventListener('change',format);
-
-clearBtn.addEventListener('click',()=>{
-  input.value=''; output.value=''; count.textContent='０件'; status.textContent=''; input.focus();
-});
+clearBtn.addEventListener('click',clearAll);
 copyBtn.addEventListener('click',async()=>{
   if(!output.value){status.textContent='内容なし';return}
-  try{
-    await navigator.clipboard.writeText(output.value);
-  }catch(e){
-    output.removeAttribute('readonly'); output.select(); document.execCommand('copy'); output.setAttribute('readonly','');
-  }
-  status.textContent='コピーしました！';
+  try{await navigator.clipboard.writeText(output.value);status.textContent='コピーしました！'}
+  catch(e){output.removeAttribute('readonly');output.select();document.execCommand('copy');output.setAttribute('readonly','');status.textContent='コピーしました！'}
   setTimeout(()=>status.textContent='',1800);
 });
-document.getElementById('shareBtn').addEventListener('click', async()=>{
-  if(navigator.share){
-    try{await navigator.share({text:output.value || input.value || ''});}catch(e){}
-  }else{
-    status.textContent='この端末では共有機能を利用できません';
+shareBtn.addEventListener('click',()=>{
+  window.open('https://writening.net/','_blank','noopener,noreferrer');
+});
+function openQuickItem(item){
+  const button=item.querySelector('.quick-link');
+  const url=button?.dataset.url||'';
+  if(url){window.open(url,'_blank','noopener,noreferrer')}
+  else{
+    status.textContent='リンク先は未設定です';
     setTimeout(()=>status.textContent='',1800);
   }
+}
+document.querySelectorAll('.quick-item').forEach(item=>{
+  item.addEventListener('click',e=>{
+    if(e.target.closest('.quick-item')===item) openQuickItem(item);
+  });
+  item.addEventListener('keydown',e=>{
+    if(e.key==='Enter'||e.key===' '){e.preventDefault();openQuickItem(item)}
+  });
 });
 
-const homeScreen=document.getElementById('homeScreen');
-const calcScreen=document.getElementById('calcScreen');
-document.getElementById('openCalc').addEventListener('click',()=>{
-  homeScreen.hidden=true; calcScreen.hidden=false; window.scrollTo(0,0);
-});
-document.querySelectorAll('.js-back').forEach(btn=>btn.addEventListener('click',()=>{
-  calcScreen.hidden=true; homeScreen.hidden=false; window.scrollTo(0,0);
-}));
 
+
+// ===== 計算表 =====
+const openCalcBtn=document.getElementById('openCalcBtn');
+const calculatorScreen=document.getElementById('calculatorScreen');
 const unitPrice=document.getElementById('unitPrice');
 const freeQty=document.getElementById('freeQty');
+const freeAmount=document.getElementById('freeAmount');
 const unit80=document.getElementById('unit80');
-const freePrice=document.getElementById('freePrice');
-const fixedPrices=[...document.querySelectorAll('.calc-price[data-qty]')];
+const fixedAmounts=[...document.querySelectorAll('.calc-amount[data-qty]')];
 
-function yen(n){
-  const v=Number.isFinite(n)?Math.round(n):0;
-  return `${v.toLocaleString('ja-JP')}円`;
+function calcYen(value){
+  const n=Number.isFinite(value)?Math.round(value):0;
+  return `${n.toLocaleString('ja-JP')}円`;
 }
-function updateCalc(){
-  const unit=Math.max(0, Number(unitPrice.value)||0);
-  fixedPrices.forEach(el=>{
+function updateCalculator(){
+  const unit=Math.max(0,Number(unitPrice.value)||0);
+  fixedAmounts.forEach(el=>{
     const qty=Number(el.dataset.qty)||0;
-    el.textContent=yen(qty*unit);
+    el.textContent=calcYen(qty*unit);
   });
-  const fq=Math.max(0, Number(freeQty.value)||0);
-  freePrice.textContent=yen(fq*unit);
+  const qty=Math.max(0,Number(freeQty.value)||0);
+  freeAmount.textContent=calcYen(qty*unit);
   unit80.textContent=Math.round(unit*0.8).toLocaleString('ja-JP');
 }
-unitPrice.addEventListener('input',updateCalc);
-freeQty.addEventListener('input',updateCalc);
+function openCalculator(){
+  calculatorScreen.classList.add('is-open');
+  calculatorScreen.setAttribute('aria-hidden','false');
+}
+function closeCalculator(){
+  calculatorScreen.classList.remove('is-open');
+  calculatorScreen.setAttribute('aria-hidden','true');
+}
+openCalcBtn.addEventListener('click',openCalculator);
+document.querySelectorAll('.jsCalcBack').forEach(btn=>btn.addEventListener('click',closeCalculator));
+unitPrice.addEventListener('input',updateCalculator);
+freeQty.addEventListener('input',updateCalculator);
+updateCalculator();
 
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js'));
+}
+openAuthIfNeeded();
 format();
-updateCalc();
 </script>
 </body>
 </html>
