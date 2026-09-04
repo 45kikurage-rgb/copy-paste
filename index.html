@@ -180,18 +180,16 @@ textarea::placeholder{color:#9b8f84;opacity:1}
   height:90%;
   border-radius:8px;
   overflow:hidden;
+  display:grid;
+  place-items:center;
 }
 .quick-icon{
   width:100%;
   height:100%;
-  object-fit:cover;
-  object-position:center;
+  object-fit:contain;
+  object-position:50% 50%;
   display:block;
 }
-.quick-item:nth-child(1) .quick-icon{object-position:center 49%}
-.quick-item:nth-child(2) .quick-icon{object-position:center 52%}
-.quick-item:nth-child(3) .quick-icon{object-position:center 48%}
-.quick-item:nth-child(4) .quick-icon{object-position:center 53%;transform:scale(1.42)}
 @media(max-width:380px){
   .app{padding-left:7px;padding-right:7px;gap:7px}
   .card{padding:8px}
@@ -242,25 +240,25 @@ textarea::placeholder{color:#9b8f84;opacity:1}
   <div class="quick-item">
     <div class="quick-label">リンク1</div>
     <button class="quick-link" type="button" data-url="" aria-label="リンク1・リンク先未設定">
-      <span class="quick-icon-frame"><img class="quick-icon" src="./link-1.jpg" alt=""></span>
+      <span class="quick-icon-frame"><img class="quick-icon" src="./link-1-transparent.png" alt=""></span>
     </button>
   </div>
   <div class="quick-item">
     <div class="quick-label">リンク2</div>
     <button class="quick-link" type="button" data-url="" aria-label="リンク2・リンク先未設定">
-      <span class="quick-icon-frame"><img class="quick-icon" src="./link-2.jpg" alt=""></span>
+      <span class="quick-icon-frame"><img class="quick-icon" src="./link-2-transparent.png" alt=""></span>
     </button>
   </div>
   <div class="quick-item">
     <div class="quick-label">リンク3</div>
     <button class="quick-link" type="button" data-url="" aria-label="リンク3・リンク先未設定">
-      <span class="quick-icon-frame"><img class="quick-icon" src="./link-3.jpg" alt=""></span>
+      <span class="quick-icon-frame"><img class="quick-icon" src="./link-3-transparent.png" alt=""></span>
     </button>
   </div>
   <div class="quick-item">
     <div class="quick-label">リンク4</div>
     <button class="quick-link" type="button" data-url="" aria-label="リンク4・リンク先未設定">
-      <span class="quick-icon-frame"><img class="quick-icon" src="./link-4.jpg" alt=""></span>
+      <span class="quick-icon-frame"><img class="quick-icon" src="./link-4-transparent.png" alt=""></span>
     </button>
   </div>
 </nav>
