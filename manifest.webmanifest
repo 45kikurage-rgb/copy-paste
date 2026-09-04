@@ -1,0 +1,17 @@
+{
+  "name": "URL改行整形ツール",
+  "short_name": "改行整形",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fde0b6",
+  "theme_color": "#fde0b6",
+  "icons": [
+    {
+      "src": "./assets/shisa-maskable.png",
+      "sizes": "1536x1536",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
