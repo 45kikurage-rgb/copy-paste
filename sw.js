@@ -1,13 +1,13 @@
-const CACHE='url-format-shisa-v3';
+const CACHE='url-format-shisa-v5';
 const CORE=[
   './',
   './index.html',
   './manifest.webmanifest',
-  './assets/shisa-maskable.png',
-  './assets/link-1.jpg',
-  './assets/link-2.jpg',
-  './assets/link-3.jpg',
-  './assets/link-4.jpg'
+  './shisa-maskable.png',
+  './link-1.jpg',
+  './link-2.jpg',
+  './link-3.jpg',
+  './link-4.jpg'
 ];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(CORE)).then(()=>self.skipWaiting()));
