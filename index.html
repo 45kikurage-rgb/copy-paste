@@ -436,28 +436,29 @@ textarea::placeholder{color:#9b8f84;opacity:1}
   min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:8px;
 }
 .calc-half{min-width:0;display:grid;grid-template-rows:46px minmax(0,1fr);border:2px solid rgba(140,119,98,.55);border-radius:16px;overflow:hidden;background:#fffaf1}
-.calc-half-right{grid-template-rows:46px minmax(0,1fr) minmax(44px,1fr);overflow:visible;border:0;background:transparent;gap:7px}
-.calc-half-right>.calc-half-head,.calc-half-right>.calc-half-body{border-left:2px solid rgba(140,119,98,.55);border-right:2px solid rgba(140,119,98,.55)}
-.calc-half-right>.calc-half-head{border-top:2px solid rgba(140,119,98,.55);border-radius:16px 16px 0 0}
-.calc-half-right>.calc-half-body{border-bottom:2px solid rgba(140,119,98,.55);border-radius:0 0 16px 16px;overflow:hidden;background:#fffaf1}
+.calc-half-right{grid-template-rows:46px minmax(0,1fr);overflow:hidden;border:2px solid rgba(140,119,98,.55);background:#fffaf1;gap:0}
+
 .calc-half-head{display:grid;grid-template-columns:42% 58%;background:var(--btn);color:#fff;font-weight:700}
 .calc-half-head span,.calc-v2-row span{display:flex;align-items:center;justify-content:center;min-width:0;padding:4px}
 .calc-half-head span+span,.calc-v2-row span+span{border-left:1px solid rgba(140,119,98,.45)}
 .calc-half-body{display:grid;grid-template-rows:repeat(5,minmax(44px,1fr));min-height:0}
-.calc-half-right .calc-half-body{grid-template-rows:repeat(4,minmax(44px,1fr))}
+.calc-half-right .calc-half-body{grid-template-rows:repeat(5,minmax(44px,1fr))}
 .calc-v2-row{display:grid;grid-template-columns:42% 58%;min-height:0;border-bottom:1px solid rgba(140,119,98,.45);font-weight:700}
 .calc-v2-row:last-child{border-bottom:0}
 .calc-v2-amount{justify-content:flex-end!important;padding-right:8px!important;text-align:right}
 .calc-special-row{display:grid;grid-template-columns:58% 42%;align-items:center;min-height:0;border:2px solid #e6893a;border-radius:12px;background:#fff1d9;font-weight:700;overflow:hidden}
 .calc-special-row span,.calc-special-amount{display:flex;align-items:center;height:100%;padding:5px 7px}
 .calc-special-amount{justify-content:flex-end;border-left:1px solid rgba(140,119,98,.45)}
-.calc-control-v2{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.unit-price-box,.calc-manage-inline,.calc-control-v2 .calc-back-inline{min-width:0;min-height:62px;border:2px solid var(--btn);border-radius:13px;font-weight:700}
+.calc-control-v2{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:8px}
+.unit-price-box,.calc-manage-inline,.calc-control-v2 .calc-back-inline,.calc-80-inline{min-width:0;min-height:124px;border:2px solid var(--btn);border-radius:13px;font-weight:700}
 .unit-price-box{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:4px;padding:6px;background:var(--btn);color:#fff}
 .unit-input-v2{min-width:0;width:100%;height:40px;border:2px solid #fff;border-radius:8px;background:#fffdf8;color:var(--text);text-align:right;padding:0 5px;outline:none}
-.calc-manage-inline{background:#f6bf83;color:var(--text)}
+.calc-manage-inline{background:#f6bf83;color:var(--text);grid-column:2;grid-row:1}
+.calc-80-inline{background:#fff1d9;color:var(--text);grid-column:1;grid-row:1;border-color:#e6893a!important;display:flex;align-items:center;justify-content:center;gap:.45em}
+.unit-price-box{grid-column:1;grid-row:2}
+.calc-control-v2 .calc-back-inline{grid-column:2;grid-row:2}
 .calc-control-v2 .calc-back-inline{background:var(--btn);color:#fff}
-.calc-mascot{background:var(--bg);mix-blend-mode:multiply}
+.calc-mascot{background:transparent;mix-blend-mode:normal;filter:none}
 .qty-manager-screen{position:fixed;z-index:55;inset:0;width:100%;height:100dvh;background:var(--bg);display:none;overflow:hidden}
 .qty-manager-screen.is-open{display:block}
 .qty-manager-wrap{width:min(100%,820px);height:100%;margin:0 auto;padding:var(--top-pad) 10px calc(8px + env(safe-area-inset-bottom));display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;gap:8px}
@@ -477,16 +478,15 @@ textarea::placeholder{color:#9b8f84;opacity:1}
 #applyQtySelectionBtn{background:var(--btn);color:#fff}
 .qty-mascot-row{min-height:96px}
 @media(max-width:430px){
-  .calc-v2-wrap :is(.calc-half-head,.calc-v2-row,.unit-price-box,.calc-manage-inline,.calc-back-inline,.calc-bubble),
-  .qty-manager-wrap :is(.qty-manager-note,.qty-preset-grid button,.qty-custom-title,.qty-custom-input,.qty-manager-actions button,.calc-bubble){font-size:clamp(.82rem,3.45vw,1.08rem)}
-  .calc-special-row{font-size:clamp(.76rem,3.2vw,1rem)}
+  .calc-v2-wrap :is(.calc-half-head,.calc-v2-row,.unit-price-box,.calc-manage-inline,.calc-back-inline,.calc-80-inline,.calc-bubble),
+  .qty-manager-wrap :is(.qty-manager-note,.qty-preset-grid button,.qty-custom-title,.qty-custom-input,.qty-manager-actions button,.calc-bubble){font-size:1.34rem}
 }
 @media(max-height:700px){
   .calc-half{grid-template-rows:38px minmax(0,1fr)}
-  .calc-half-right{grid-template-rows:38px minmax(0,1fr) minmax(38px,.9fr)}
+  .calc-half-right{grid-template-rows:38px minmax(0,1fr)}
   .calc-half-body{grid-template-rows:repeat(5,minmax(34px,1fr))}
-  .calc-half-right .calc-half-body{grid-template-rows:repeat(4,minmax(34px,1fr))}
-  .unit-price-box,.calc-manage-inline,.calc-control-v2 .calc-back-inline{min-height:52px}
+  .calc-half-right .calc-half-body{grid-template-rows:repeat(5,minmax(34px,1fr))}
+  .unit-price-box,.calc-manage-inline,.calc-control-v2 .calc-back-inline,.calc-80-inline{min-height:104px}
   .unit-input-v2{height:34px}
   .qty-manager-card{gap:7px;padding:8px}
   .qty-preset-grid{gap:6px}.qty-preset-grid button{min-height:44px}
@@ -585,20 +585,17 @@ textarea::placeholder{color:#9b8f84;opacity:1}
       <div class="calc-half calc-half-right" id="calcRightHalf">
         <div class="calc-half-head"><span>本数</span><span>合計金額</span></div>
         <div class="calc-half-body" id="calcRightRows"></div>
-        <div class="calc-special-row">
-          <span>単価の８０％</span>
-          <output id="unit80" class="calc-special-amount">０円</output>
-        </div>
       </div>
     </div>
 
     <div class="calc-control-row calc-control-v2">
+      <div class="calc-80-inline"><span>８０％</span><output id="unit80">０円</output></div>
+      <button class="calc-manage-inline" id="openQtyManagerBtn" type="button">表示本数管理</button>
       <label class="unit-price-box">
         <span>単価</span>
         <input id="unitPrice" class="unit-input-v2 fw-input" type="text" inputmode="numeric" autocomplete="off" placeholder="０" aria-label="単価">
         <span>円</span>
       </label>
-      <button class="calc-manage-inline" id="openQtyManagerBtn" type="button">表示本数</button>
       <button class="calc-back-inline jsCalcBack" type="button">▶ 戻る</button>
     </div>
 
@@ -620,7 +617,7 @@ textarea::placeholder{color:#9b8f84;opacity:1}
     </header>
 
     <div class="qty-manager-card">
-      <div class="qty-manager-note">表示したい本数を選んでください<br>最大９つまで選択可能</div>
+      <div class="qty-manager-note">表示したい本数を選んでください<br>最大１０個まで選択可能</div>
       <div class="qty-preset-grid" id="qtyPresetGrid">
         <button type="button" data-qty="2">２</button><button type="button" data-qty="3">３</button><button type="button" data-qty="4">４</button>
         <button type="button" data-qty="5">５</button><button type="button" data-qty="10">１０</button><button type="button" data-qty="20">２０</button>
@@ -797,7 +794,7 @@ function loadDisplayQtys(){
   try{
     const saved=JSON.parse(localStorage.getItem(QTY_KEY)||'null');
     if(Array.isArray(saved)){
-      const clean=[...new Set(saved.map(Number).filter(n=>Number.isFinite(n)&&n>0))].sort((a,b)=>a-b).slice(0,9);
+      const clean=[...new Set(saved.map(Number).filter(n=>Number.isFinite(n)&&n>0))].sort((a,b)=>a-b).slice(0,10);
       if(clean.length) return clean;
     }
   }catch(e){}
@@ -818,10 +815,10 @@ function makeCalcRow(qty){
 }
 function renderCalcRows(){
   calcLeftRows.innerHTML=''; calcRightRows.innerHTML='';
-  const slots=[...displayQtys].sort((a,b)=>a-b).slice(0,9);
-  while(slots.length<9) slots.push(null);
+  const slots=[...displayQtys].sort((a,b)=>a-b).slice(0,10);
+  while(slots.length<10) slots.push(null);
   slots.slice(0,5).forEach(q=>calcLeftRows.appendChild(makeCalcRow(q)));
-  slots.slice(5,9).forEach(q=>calcRightRows.appendChild(makeCalcRow(q)));
+  slots.slice(5,10).forEach(q=>calcRightRows.appendChild(makeCalcRow(q)));
   updateCalculator();
 }
 function updateCalculator(){
@@ -866,11 +863,11 @@ qtyPresetGrid.addEventListener('click',e=>{
   const n=Number(btn.dataset.qty);
   if(selectedPreset.has(n)){selectedPreset.delete(n);btn.classList.remove('is-selected');qtyManagerStatus.textContent='';return}
   const current=gatherManagerQtys();
-  if(current.length>=9){qtyManagerStatus.textContent='最大９つまで選択できます';return}
+  if(current.length>=10){qtyManagerStatus.textContent='最大１０個まで選択できます';return}
   selectedPreset.add(n);btn.classList.add('is-selected');qtyManagerStatus.textContent='';
 });
 qtyCustomInputs.forEach(input=>input.addEventListener('change',()=>{
-  if(gatherManagerQtys().length>9){input.value='';qtyManagerStatus.textContent='最大９つまで選択できます'}else qtyManagerStatus.textContent='';
+  if(gatherManagerQtys().length>10){input.value='';qtyManagerStatus.textContent='最大１０個まで選択できます'}else qtyManagerStatus.textContent='';
 }));
 clearQtySelectionBtn.addEventListener('click',()=>{
   selectedPreset.clear();qtyPresetGrid.querySelectorAll('button').forEach(b=>b.classList.remove('is-selected'));
@@ -878,7 +875,7 @@ clearQtySelectionBtn.addEventListener('click',()=>{
 });
 applyQtySelectionBtn.addEventListener('click',()=>{
   const qtys=gatherManagerQtys();
-  if(qtys.length>9){qtyManagerStatus.textContent='最大９つまで選択できます';return}
+  if(qtys.length>10){qtyManagerStatus.textContent='最大１０個まで選択できます';return}
   displayQtys=qtys;
   localStorage.setItem(QTY_KEY,JSON.stringify(displayQtys));
   renderCalcRows();closeQtyManager();
