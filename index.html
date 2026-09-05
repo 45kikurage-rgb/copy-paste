@@ -427,10 +427,23 @@ textarea::placeholder{color:#9b8f84;opacity:1}
 .calc-v2-wrap,.qty-manager-wrap,.calc-v2-wrap button,.calc-v2-wrap input,.qty-manager-wrap button,.qty-manager-wrap input{
   font-family:"Yomogi","Klee One","Yu Mincho",cursive;
 }
-.calc-v2-wrap :is(.calc-cell,.calc-half-head,.calc-v2-row,.unit-price-box,.calc-manage-inline,.calc-back-inline,.calc-bubble),
+.calc-v2-wrap :is(.unit-price-box,.calc-manage-inline,.calc-back-inline,.calc-bubble),
 .qty-manager-wrap :is(.qty-manager-note,.qty-preset-grid button,.qty-custom-title,.qty-custom-input,.qty-manager-actions button,.calc-bubble){
   font-size:1.34rem;
   line-height:1.25;
+}
+/* 表内だけフォントサイズを下げ、折り返さず枠内に収める。フォント自体は変更しない */
+.calc-v2-wrap .calc-half-head{
+  font-size:1.06rem;
+  line-height:1.2;
+  white-space:nowrap;
+}
+.calc-v2-wrap .calc-v2-row{
+  font-size:1.04rem;
+  line-height:1.2;
+}
+.calc-v2-wrap .calc-v2-row span{
+  white-space:nowrap;
 }
 .calc-dual-table{
   min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:8px;
@@ -478,8 +491,10 @@ textarea::placeholder{color:#9b8f84;opacity:1}
 #applyQtySelectionBtn{background:var(--btn);color:#fff}
 .qty-mascot-row{min-height:96px}
 @media(max-width:430px){
-  .calc-v2-wrap :is(.calc-half-head,.calc-v2-row,.unit-price-box,.calc-manage-inline,.calc-back-inline,.calc-80-inline,.calc-bubble),
+  .calc-v2-wrap :is(.unit-price-box,.calc-manage-inline,.calc-back-inline,.calc-80-inline,.calc-bubble),
   .qty-manager-wrap :is(.qty-manager-note,.qty-preset-grid button,.qty-custom-title,.qty-custom-input,.qty-manager-actions button,.calc-bubble){font-size:1.34rem}
+  .calc-v2-wrap .calc-half-head{font-size:1.02rem}
+  .calc-v2-wrap .calc-v2-row{font-size:1rem}
 }
 @media(max-height:700px){
   .calc-half{grid-template-rows:38px minmax(0,1fr)}
