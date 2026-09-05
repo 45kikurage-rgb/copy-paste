@@ -422,6 +422,107 @@ textarea::placeholder{color:#9b8f84;opacity:1}
   .calc-bubble{min-height:62px;font-size:.76rem;padding:7px 9px}
 }
 
+/* ===== 計算表 v2 / 本数管理 ===== */
+.calc-v2-wrap{grid-template-rows:auto minmax(0,1fr) auto auto}
+.calc-v2-wrap,.qty-manager-wrap,.calc-v2-wrap button,.calc-v2-wrap input,.qty-manager-wrap button,.qty-manager-wrap input{
+  font-family:"Yomogi","Klee One","Yu Mincho",cursive;
+}
+.calc-v2-wrap :is(.calc-cell,.calc-half-head,.calc-v2-row,.unit-price-box,.calc-manage-inline,.calc-back-inline,.calc-bubble),
+.qty-manager-wrap :is(.qty-manager-note,.qty-preset-grid button,.qty-custom-title,.qty-custom-input,.qty-manager-actions button,.calc-bubble){
+  font-size:1.34rem;
+  line-height:1.25;
+}
+.calc-dual-table{
+  min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:8px;
+}
+.calc-half{min-width:0;display:grid;grid-template-rows:46px minmax(0,1fr);border:2px solid rgba(140,119,98,.55);border-radius:16px;overflow:hidden;background:#fffaf1}
+.calc-half-right{grid-template-rows:46px minmax(0,1fr) minmax(44px,1fr);overflow:visible;border:0;background:transparent;gap:7px}
+.calc-half-right>.calc-half-head,.calc-half-right>.calc-half-body{border-left:2px solid rgba(140,119,98,.55);border-right:2px solid rgba(140,119,98,.55)}
+.calc-half-right>.calc-half-head{border-top:2px solid rgba(140,119,98,.55);border-radius:16px 16px 0 0}
+.calc-half-right>.calc-half-body{border-bottom:2px solid rgba(140,119,98,.55);border-radius:0 0 16px 16px;overflow:hidden;background:#fffaf1}
+.calc-half-head{display:grid;grid-template-columns:42% 58%;background:var(--btn);color:#fff;font-weight:700}
+.calc-half-head span,.calc-v2-row span{display:flex;align-items:center;justify-content:center;min-width:0;padding:4px}
+.calc-half-head span+span,.calc-v2-row span+span{border-left:1px solid rgba(140,119,98,.45)}
+.calc-half-body{display:grid;grid-template-rows:repeat(5,minmax(44px,1fr));min-height:0}
+.calc-half-right .calc-half-body{grid-template-rows:repeat(4,minmax(44px,1fr))}
+.calc-v2-row{display:grid;grid-template-columns:42% 58%;min-height:0;border-bottom:1px solid rgba(140,119,98,.45);font-weight:700}
+.calc-v2-row:last-child{border-bottom:0}
+.calc-v2-amount{justify-content:flex-end!important;padding-right:8px!important;text-align:right}
+.calc-special-row{display:grid;grid-template-columns:58% 42%;align-items:center;min-height:0;border:2px solid #e6893a;border-radius:12px;background:#fff1d9;font-weight:700;overflow:hidden}
+.calc-special-row span,.calc-special-amount{display:flex;align-items:center;height:100%;padding:5px 7px}
+.calc-special-amount{justify-content:flex-end;border-left:1px solid rgba(140,119,98,.45)}
+.calc-control-v2{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.unit-price-box,.calc-manage-inline,.calc-control-v2 .calc-back-inline{min-width:0;min-height:62px;border:2px solid var(--btn);border-radius:13px;font-weight:700}
+.unit-price-box{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:4px;padding:6px;background:var(--btn);color:#fff}
+.unit-input-v2{min-width:0;width:100%;height:40px;border:2px solid #fff;border-radius:8px;background:#fffdf8;color:var(--text);text-align:right;padding:0 5px;outline:none}
+.calc-manage-inline{background:#f6bf83;color:var(--text)}
+.calc-control-v2 .calc-back-inline{background:var(--btn);color:#fff}
+.calc-mascot{background:var(--bg);mix-blend-mode:multiply}
+.qty-manager-screen{position:fixed;z-index:55;inset:0;width:100%;height:100dvh;background:var(--bg);display:none;overflow:hidden}
+.qty-manager-screen.is-open{display:block}
+.qty-manager-wrap{width:min(100%,820px);height:100%;margin:0 auto;padding:var(--top-pad) 10px calc(8px + env(safe-area-inset-bottom));display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;gap:8px}
+.qty-manager-card{min-height:0;overflow:auto;background:rgba(255,250,241,.7);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:12px}
+.qty-manager-note{text-align:center;font-weight:700}
+.qty-preset-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.qty-preset-grid button{min-height:58px;border:2px solid var(--border);border-radius:13px;background:#fffaf1;color:var(--text);font-weight:700}
+.qty-preset-grid button.is-selected{background:#f6bf83;border-color:var(--btn);box-shadow:inset 0 0 0 2px var(--btn)}
+.qty-custom-title{font-weight:700;border-top:1px solid rgba(140,119,98,.35);padding-top:10px}
+.qty-custom-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.qty-custom-input{width:100%;min-width:0;height:50px;border:2px solid rgba(140,119,98,.68);border-radius:11px;background:#fffdf8;text-align:center;padding:4px;outline:none}
+.qty-custom-input::placeholder{font-size:.8em}
+.qty-manager-status{min-height:1.3em;text-align:center;color:#9a3d31;font-weight:700}
+.qty-manager-actions{display:grid;grid-template-columns:1fr 1.35fr;gap:9px}
+.qty-manager-actions button{min-height:60px;border:2px solid var(--btn);border-radius:13px;font-weight:700}
+#clearQtySelectionBtn{background:#fffaf1;color:var(--text)}
+#applyQtySelectionBtn{background:var(--btn);color:#fff}
+.qty-mascot-row{min-height:96px}
+@media(max-width:430px){
+  .calc-v2-wrap :is(.calc-half-head,.calc-v2-row,.unit-price-box,.calc-manage-inline,.calc-back-inline,.calc-bubble),
+  .qty-manager-wrap :is(.qty-manager-note,.qty-preset-grid button,.qty-custom-title,.qty-custom-input,.qty-manager-actions button,.calc-bubble){font-size:clamp(.82rem,3.45vw,1.08rem)}
+  .calc-special-row{font-size:clamp(.76rem,3.2vw,1rem)}
+}
+@media(max-height:700px){
+  .calc-half{grid-template-rows:38px minmax(0,1fr)}
+  .calc-half-right{grid-template-rows:38px minmax(0,1fr) minmax(38px,.9fr)}
+  .calc-half-body{grid-template-rows:repeat(5,minmax(34px,1fr))}
+  .calc-half-right .calc-half-body{grid-template-rows:repeat(4,minmax(34px,1fr))}
+  .unit-price-box,.calc-manage-inline,.calc-control-v2 .calc-back-inline{min-height:52px}
+  .unit-input-v2{height:34px}
+  .qty-manager-card{gap:7px;padding:8px}
+  .qty-preset-grid{gap:6px}.qty-preset-grid button{min-height:44px}
+  .qty-custom-grid{gap:6px}.qty-custom-input{height:40px}
+  .qty-manager-actions button{min-height:50px}
+}
+
+
+/* ===== 計算表 最終版復元 2026-09-06 ===== */
+.calc-v2-wrap{grid-template-rows:auto minmax(0,1fr) auto auto auto;gap:8px}
+.calc-dual-table{gap:8px}
+.calc-half,.calc-half-right{display:grid;grid-template-rows:46px minmax(0,1fr);border:2px solid rgba(140,119,98,.55);border-radius:16px;overflow:hidden;background:#fffaf1;gap:0}
+.calc-half-right>.calc-half-head,.calc-half-right>.calc-half-body{border:0;border-radius:0}
+.calc-half-body,.calc-half-right .calc-half-body{grid-template-rows:repeat(5,minmax(44px,1fr))}
+.calc-sub-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.calc-special-row{min-height:82px;grid-template-columns:auto 1fr;padding:0 14px;border-radius:13px;font-size:1.34rem}
+.calc-special-row span{padding:0;white-space:nowrap}
+.calc-special-amount{border-left:0;padding:0 0 0 16px;justify-content:flex-start}
+.calc-manage-inline{min-height:82px;font-size:1.34rem}
+.calc-control-v2{grid-template-columns:1fr 1fr;gap:8px}
+.unit-price-box,.calc-control-v2 .calc-back-inline{min-height:82px;font-size:1.34rem}
+.calc-mascot-row{grid-template-columns:164px minmax(0,1fr);gap:8px}
+.calc-mascot{width:164px;height:112px;object-fit:contain;background:var(--bg);mix-blend-mode:normal}
+.calc-bubble{min-height:112px;font-size:1.34rem;line-height:1.35}
+@media(max-width:430px){
+ .calc-v2-wrap :is(.calc-half-head,.calc-v2-row,.unit-price-box,.calc-manage-inline,.calc-back-inline,.calc-bubble),.calc-special-row{font-size:clamp(.88rem,4.15vw,1.12rem)}
+ .calc-mascot-row{grid-template-columns:96px minmax(0,1fr)}
+ .calc-mascot{width:96px;height:96px}
+ .calc-bubble{min-height:96px}
+}
+@media(max-height:700px){
+ .calc-half,.calc-half-right{grid-template-rows:38px minmax(0,1fr)}
+ .calc-half-body,.calc-half-right .calc-half-body{grid-template-rows:repeat(5,minmax(34px,1fr))}
+ .calc-special-row,.calc-manage-inline,.unit-price-box,.calc-control-v2 .calc-back-inline{min-height:54px}
+}
+
 </style>
 </head>
 <body>
@@ -488,7 +589,7 @@ textarea::placeholder{color:#9b8f84;opacity:1}
   </div>
   <div class="quick-item" role="button" tabindex="0">
     <div class="quick-label">リンク4</div>
-    <button class="quick-link" type="button" data-url="https://line.me/ti/p/xU-RuP-Jua" aria-label="リンク4を開く">
+    <button class="quick-link" type="button" data-url="" aria-label="リンク4（未設定）">
       <span class="quick-icon-frame"><img class="quick-icon" src="./link-4-transparent.png" alt=""></span>
     </button>
   </div>
@@ -496,7 +597,7 @@ textarea::placeholder{color:#9b8f84;opacity:1}
 
 
 <section class="calculator-screen" id="calculatorScreen" aria-hidden="true">
-  <div class="calc-wrap">
+  <div class="calc-wrap calc-v2-wrap">
     <header class="calc-top">
       <button class="calc-back-top jsCalcBack" type="button">◀ 戻る</button>
       <div class="calc-title-box">計算表</div>
@@ -505,36 +606,75 @@ textarea::placeholder{color:#9b8f84;opacity:1}
       </div>
     </header>
 
-    <div class="calc-table" role="table" aria-label="本数別計算表">
-      <div class="calc-row calc-head" role="row">
-        <div class="calc-cell" role="columnheader">本数</div>
-        <div class="calc-cell" role="columnheader">金額（自動計算）</div>
+    <div class="calc-dual-table" role="table" aria-label="本数別計算表">
+      <div class="calc-half" id="calcLeftHalf">
+        <div class="calc-half-head"><span>本数</span><span>合計金額</span></div>
+        <div class="calc-half-body" id="calcLeftRows"></div>
       </div>
-      <div class="calc-row" role="row"><div class="calc-cell">5本</div><div class="calc-cell calc-amount" data-qty="5">0円</div></div>
-      <div class="calc-row" role="row"><div class="calc-cell">10本</div><div class="calc-cell calc-amount" data-qty="10">0円</div></div>
-      <div class="calc-row" role="row"><div class="calc-cell">20本</div><div class="calc-cell calc-amount" data-qty="20">0円</div></div>
-      <div class="calc-row" role="row"><div class="calc-cell">24本</div><div class="calc-cell calc-amount" data-qty="24">0円</div></div>
-      <div class="calc-row" role="row">
-        <div class="calc-cell"><span>自由入力</span><input id="freeQty" class="free-qty" type="number" inputmode="numeric" min="0" step="1" aria-label="自由入力の本数"><span>本</span></div>
-        <div class="calc-cell calc-amount" id="freeAmount">0円</div>
+      <div class="calc-half" id="calcRightHalf">
+        <div class="calc-half-head"><span>本数</span><span>合計金額</span></div>
+        <div class="calc-half-body" id="calcRightRows"></div>
       </div>
     </div>
 
-    <div class="calc-control-row">
-      <div class="unit-inline">
-        <span class="unit-label">単価</span>
-        <input id="unitPrice" class="unit-input" type="number" inputmode="numeric" min="0" step="1" placeholder="0" aria-label="単価">
-        <span class="unit-yen">円</span>
-        <span class="unit-label">×80%</span>
-        <output id="unit80" class="unit-result">0</output>
-        <span class="unit-yen">円</span>
-      </div>
+    <div class="calc-sub-actions">
+      <div class="calc-special-row"><span>８０％</span><output id="unit80" class="calc-special-amount">０円</output></div>
+      <button class="calc-manage-inline" id="openQtyManagerBtn" type="button">表示本数管理</button>
+    </div>
+
+    <div class="calc-control-row calc-control-v2">
+      <label class="unit-price-box">
+        <span>単価</span>
+        <input id="unitPrice" class="unit-input-v2 fw-input" type="text" inputmode="numeric" autocomplete="off" placeholder="０" aria-label="単価">
+        <span>円</span>
+      </label>
       <button class="calc-back-inline jsCalcBack" type="button">▶ 戻る</button>
     </div>
 
     <div class="calc-mascot-row">
-      <img class="calc-mascot" src="./calculator-mascot.png" alt="計算表のキャラクター">
+      <img class="calc-mascot" src="./calculator-mascot-final.png" alt="計算表のキャラクター">
       <div class="calc-bubble">単価を入力すると<br>各本数の金額が自動で計算されるよ！</div>
+    </div>
+  </div>
+</section>
+
+<section class="qty-manager-screen" id="qtyManagerScreen" aria-hidden="true">
+  <div class="qty-manager-wrap">
+    <header class="calc-top qty-top">
+      <button class="calc-back-top" id="closeQtyManagerBtn" type="button">◀ 戻る</button>
+      <div class="calc-title-box">本数管理</div>
+      <div class="calc-icon-box" aria-hidden="true">
+        <span class="calculator-glyph"><span></span><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      </div>
+    </header>
+
+    <div class="qty-manager-card">
+      <div class="qty-manager-note">表示したい本数を選んでください<br>最大９つまで選択可能</div>
+      <div class="qty-preset-grid" id="qtyPresetGrid">
+        <button type="button" data-qty="2">２</button><button type="button" data-qty="3">３</button><button type="button" data-qty="4">４</button>
+        <button type="button" data-qty="5">５</button><button type="button" data-qty="10">１０</button><button type="button" data-qty="20">２０</button>
+        <button type="button" data-qty="24">２４</button><button type="button" data-qty="48">４８</button><button type="button" data-qty="100">１００</button>
+      </div>
+      <div class="qty-custom-title">その他の本数を入力（任意）</div>
+      <div class="qty-custom-grid" id="qtyCustomGrid">
+        <input class="qty-custom-input fw-input" type="text" inputmode="numeric" placeholder="数字を入力" aria-label="任意本数１">
+        <input class="qty-custom-input fw-input" type="text" inputmode="numeric" placeholder="数字を入力" aria-label="任意本数２">
+        <input class="qty-custom-input fw-input" type="text" inputmode="numeric" placeholder="数字を入力" aria-label="任意本数３">
+        <input class="qty-custom-input fw-input" type="text" inputmode="numeric" placeholder="数字を入力" aria-label="任意本数４">
+        <input class="qty-custom-input fw-input" type="text" inputmode="numeric" placeholder="数字を入力" aria-label="任意本数５">
+        <input class="qty-custom-input fw-input" type="text" inputmode="numeric" placeholder="数字を入力" aria-label="任意本数６">
+      </div>
+      <div class="qty-manager-status" id="qtyManagerStatus" aria-live="polite"></div>
+    </div>
+
+    <div class="qty-manager-actions">
+      <button type="button" id="clearQtySelectionBtn">クリア</button>
+      <button type="button" id="applyQtySelectionBtn">この内容で表示</button>
+    </div>
+
+    <div class="calc-mascot-row qty-mascot-row">
+      <img class="calc-mascot" src="./calculator-mascot-user.png" alt="本数管理のキャラクター">
+      <div class="calc-bubble">選択した本数が<br>計算表に表示されるよ！</div>
     </div>
   </div>
 </section>
@@ -646,57 +786,138 @@ document.querySelectorAll('.quick-item').forEach(item=>{
 // ===== 計算表 =====
 const openCalcBtn=document.getElementById('openCalcBtn');
 const calculatorScreen=document.getElementById('calculatorScreen');
+const qtyManagerScreen=document.getElementById('qtyManagerScreen');
 const unitPrice=document.getElementById('unitPrice');
-const freeQty=document.getElementById('freeQty');
-const freeAmount=document.getElementById('freeAmount');
 const unit80=document.getElementById('unit80');
-const fixedAmounts=[...document.querySelectorAll('.calc-amount[data-qty]')];
+const calcLeftRows=document.getElementById('calcLeftRows');
+const calcRightRows=document.getElementById('calcRightRows');
+const openQtyManagerBtn=document.getElementById('openQtyManagerBtn');
+const closeQtyManagerBtn=document.getElementById('closeQtyManagerBtn');
+const qtyPresetGrid=document.getElementById('qtyPresetGrid');
+const qtyCustomInputs=[...document.querySelectorAll('.qty-custom-input')];
+const qtyManagerStatus=document.getElementById('qtyManagerStatus');
+const clearQtySelectionBtn=document.getElementById('clearQtySelectionBtn');
+const applyQtySelectionBtn=document.getElementById('applyQtySelectionBtn');
+const QTY_KEY='calc-display-qty-final-v1';
+const DEFAULT_QTYS=[2,3,4,5,10,20,24,48,100,500];
+let selectedPreset=new Set();
+let displayQtys=loadDisplayQtys();
 
-function calcYen(value){
-  const n=Number.isFinite(value)?Math.round(value):0;
-  return `${n.toLocaleString('ja-JP')}円`;
+function toHalfDigits(value){
+  return String(value??'').replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/[^0-9]/g,'');
+}
+function toFullDigits(value){
+  return String(value??'').replace(/[0-9]/g,c=>String.fromCharCode(c.charCodeAt(0)+0xFEE0));
+}
+function fullNumber(value){
+  const n=Math.max(0,Math.round(Number(value)||0));
+  return toFullDigits(n.toLocaleString('ja-JP'));
+}
+function parseNumericInput(el){
+  return Math.max(0,Number(toHalfDigits(el.value))||0);
+}
+function normalizeFullInput(el){
+  const raw=toHalfDigits(el.value);
+  el.value=toFullDigits(raw);
+}
+document.querySelectorAll('.fw-input').forEach(el=>el.addEventListener('input',()=>normalizeFullInput(el)));
+
+function loadDisplayQtys(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(QTY_KEY)||'null');
+    if(Array.isArray(saved)){
+      const clean=[...new Set(saved.map(Number).filter(n=>Number.isFinite(n)&&n>0))].sort((a,b)=>a-b).slice(0,10);
+      if(clean.length) return clean;
+    }
+  }catch(e){}
+  return [...DEFAULT_QTYS];
+}
+function calcYen(value){return `${fullNumber(value)}円`}
+function makeCalcRow(qty){
+  const row=document.createElement('div');
+  row.className='calc-v2-row';
+  const q=document.createElement('span');
+  q.textContent=qty?`${fullNumber(qty)}本`:'－';
+  const a=document.createElement('span');
+  a.className='calc-v2-amount';
+  a.dataset.qty=qty||'';
+  a.textContent=qty?'０円':'－';
+  row.append(q,a);
+  return row;
+}
+function renderCalcRows(){
+  calcLeftRows.innerHTML=''; calcRightRows.innerHTML='';
+  const slots=[...displayQtys].sort((a,b)=>a-b).slice(0,10);
+  while(slots.length<10) slots.push(null);
+  slots.slice(0,5).forEach(q=>calcLeftRows.appendChild(makeCalcRow(q)));
+  slots.slice(5,10).forEach(q=>calcRightRows.appendChild(makeCalcRow(q)));
+  updateCalculator();
 }
 function updateCalculator(){
-  const unit=Math.max(0,Number(unitPrice.value)||0);
-  fixedAmounts.forEach(el=>{
+  const unit=parseNumericInput(unitPrice);
+  document.querySelectorAll('.calc-v2-amount[data-qty]').forEach(el=>{
     const qty=Number(el.dataset.qty)||0;
-    el.textContent=calcYen(qty*unit);
+    if(qty) el.textContent=calcYen(qty*unit);
   });
-  const qty=Math.max(0,Number(freeQty.value)||0);
-  freeAmount.textContent=calcYen(qty*unit);
-  unit80.textContent=Math.round(unit*0.8).toLocaleString('ja-JP');
+  unit80.textContent=calcYen(unit*0.8);
 }
-function showCalculator(){
+function openCalculator(){
   calculatorScreen.classList.add('is-open');
   calculatorScreen.setAttribute('aria-hidden','false');
+  renderCalcRows();
 }
-function hideCalculator(){
+function closeCalculator(){
+  qtyManagerScreen.classList.remove('is-open');
+  qtyManagerScreen.setAttribute('aria-hidden','true');
   calculatorScreen.classList.remove('is-open');
   calculatorScreen.setAttribute('aria-hidden','true');
 }
-function openCalculator(){
-  if(calculatorScreen.classList.contains('is-open')) return;
-  history.pushState({screen:'calculator'}, '', location.href);
-  showCalculator();
+function openQtyManager(){
+  selectedPreset=new Set(displayQtys.filter(q=>qtyPresetGrid.querySelector(`[data-qty="${q}"]`)));
+  qtyPresetGrid.querySelectorAll('button').forEach(btn=>btn.classList.toggle('is-selected',selectedPreset.has(Number(btn.dataset.qty))));
+  const custom=displayQtys.filter(q=>!selectedPreset.has(q));
+  qtyCustomInputs.forEach((input,i)=>input.value=custom[i]?fullNumber(custom[i]):'');
+  qtyManagerStatus.textContent='';
+  qtyManagerScreen.classList.add('is-open');
+  qtyManagerScreen.setAttribute('aria-hidden','false');
 }
-function closeCalculator(){
-  if(history.state && history.state.screen === 'calculator'){
-    history.back();
-  }else{
-    hideCalculator();
-  }
+function closeQtyManager(){
+  qtyManagerScreen.classList.remove('is-open');
+  qtyManagerScreen.setAttribute('aria-hidden','true');
 }
+function gatherManagerQtys(){
+  const preset=[...selectedPreset];
+  const custom=qtyCustomInputs.map(parseNumericInput).filter(n=>n>0);
+  return [...new Set([...preset,...custom])].sort((a,b)=>a-b);
+}
+qtyPresetGrid.addEventListener('click',e=>{
+  const btn=e.target.closest('button[data-qty]'); if(!btn)return;
+  const n=Number(btn.dataset.qty);
+  if(selectedPreset.has(n)){selectedPreset.delete(n);btn.classList.remove('is-selected');qtyManagerStatus.textContent='';return}
+  const current=gatherManagerQtys();
+  if(current.length>=9){qtyManagerStatus.textContent='最大９つまで選択できます';return}
+  selectedPreset.add(n);btn.classList.add('is-selected');qtyManagerStatus.textContent='';
+});
+qtyCustomInputs.forEach(input=>input.addEventListener('change',()=>{
+  if(gatherManagerQtys().length>9){input.value='';qtyManagerStatus.textContent='最大９つまで選択できます'}else qtyManagerStatus.textContent='';
+}));
+clearQtySelectionBtn.addEventListener('click',()=>{
+  selectedPreset.clear();qtyPresetGrid.querySelectorAll('button').forEach(b=>b.classList.remove('is-selected'));
+  qtyCustomInputs.forEach(i=>i.value='');qtyManagerStatus.textContent='';
+});
+applyQtySelectionBtn.addEventListener('click',()=>{
+  const qtys=gatherManagerQtys();
+  if(qtys.length>9){qtyManagerStatus.textContent='最大９つまで選択できます';return}
+  displayQtys=qtys;
+  localStorage.setItem(QTY_KEY,JSON.stringify(displayQtys));
+  renderCalcRows();closeQtyManager();
+});
 openCalcBtn.addEventListener('click',openCalculator);
 document.querySelectorAll('.jsCalcBack').forEach(btn=>btn.addEventListener('click',closeCalculator));
-
-window.addEventListener('popstate',()=>{
-  if(calculatorScreen.classList.contains('is-open')){
-    hideCalculator();
-  }
-});
+openQtyManagerBtn.addEventListener('click',openQtyManager);
+closeQtyManagerBtn.addEventListener('click',closeQtyManager);
 unitPrice.addEventListener('input',updateCalculator);
-freeQty.addEventListener('input',updateCalculator);
-updateCalculator();
+renderCalcRows();
 
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js'));
