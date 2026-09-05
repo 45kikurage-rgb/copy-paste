@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v8-calculator-qty';
+const CACHE='url-format-shisa-v8-back-history';
 const CORE=[
   './',
   './index.html',
@@ -8,8 +8,7 @@ const CORE=[
   './link-2-transparent.png',
   './link-3-transparent.png',
   './link-4-transparent.png',
-  './calculator-mascot.png',
-  './calculator-mascot-user.png'
+  './calculator-mascot.png'
 ];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(CORE)).then(()=>self.skipWaiting()));
