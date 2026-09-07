@@ -90,12 +90,16 @@
             <button class="dialog-btn is-soft" id="cancelEditBtn" type="button">キャンセル</button>
             <button class="form-submit" id="saveEditBtn" type="submit">変更を保存</button>
           </div>
+          <div class="delete-section">
+            <button class="delete-coupon-btn" id="deleteCouponBtn" type="button">このクーポンを削除</button>
+          </div>
         </form>
       </div>`;
     document.body.appendChild(overlay);
     form = overlay.querySelector('#couponEditForm');
     overlay.querySelector('#closeEditBtn').addEventListener('click', closeEdit);
     overlay.querySelector('#cancelEditBtn').addEventListener('click', closeEdit);
+    overlay.querySelector('#deleteCouponBtn').addEventListener('click', deleteSelectedCoupon);
     overlay.querySelector('#editExpirySelect').addEventListener('change', event => {
       overlay.querySelector('#editExpiresOn').value = event.target.value;
     });
@@ -145,9 +149,11 @@
     if (!selected) return;
     const result = overlay.querySelector('#editResult');
     const saveBtn = overlay.querySelector('#saveEditBtn');
+    const deleteBtn = overlay.querySelector('#deleteCouponBtn');
     result.textContent = '変更を保存しています...';
     result.classList.remove('is-error');
     saveBtn.disabled = true;
+    deleteBtn.disabled = true;
     try {
       const data = new FormData(form);
       data.set('currentExpiresOn', overlay.querySelector('#editExpirySelect').value);
@@ -161,6 +167,35 @@
       result.classList.add('is-error');
     } finally {
       saveBtn.disabled = false;
+      deleteBtn.disabled = false;
+    }
+  }
+
+  async function deleteSelectedCoupon() {
+    if (!selected) return;
+    if (localStorage.getItem('coupon-active-reservation-v1')) {
+      alert('予約中のクーポンを完了またはキャンセルしてから削除してください。');
+      return;
+    }
+    const ok = confirm(`「${selected.name}」を削除しますか？\n\n登録されているURL・画像・代表画像もすべて削除されます。\nこの操作は元に戻せません。`);
+    if (!ok) return;
+
+    const result = overlay.querySelector('#editResult');
+    const saveBtn = overlay.querySelector('#saveEditBtn');
+    const deleteBtn = overlay.querySelector('#deleteCouponBtn');
+    result.textContent = 'クーポンを削除しています...';
+    result.classList.remove('is-error');
+    saveBtn.disabled = true;
+    deleteBtn.disabled = true;
+    try {
+      await api(`/api/coupons/${encodeURIComponent(selected.id)}`, { method: 'DELETE' });
+      result.textContent = 'クーポンを削除しました。';
+      setTimeout(() => location.reload(), 350);
+    } catch (error) {
+      result.textContent = error.message;
+      result.classList.add('is-error');
+      saveBtn.disabled = false;
+      deleteBtn.disabled = false;
     }
   }
 
