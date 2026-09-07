@@ -1,0 +1,15 @@
+name = "coupon-manager-api"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+[[d1_databases]]
+binding = "COUPON_DB"
+database_name = "coupon-manager-db"
+database_id = "68350df5-8fad-43fe-94b7-9ebf6ca8d37d"
+
+[[r2_buckets]]
+binding = "COUPON_IMAGES"
+bucket_name = "coupon-images"
+
+[vars]
+ALLOWED_ORIGINS = "https://45kikurage-rgb.github.io"
