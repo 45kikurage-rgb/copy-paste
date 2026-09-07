@@ -1,0 +1,14 @@
+{
+  "name": "self-use-coupon-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/index.js && node --test test/*.test.js",
+    "test:integration": "node test/integration.mjs",
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.34.0"
+  }
+}

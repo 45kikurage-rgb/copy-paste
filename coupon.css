@@ -1,0 +1,83 @@
+:root{
+  --bg:#fde0b6;
+  --card:#fffaf1;
+  --text:#282018;
+  --sub:#776a5e;
+  --border:#8c7762;
+  --btn:#3c3026;
+  --btn-soft:#fff4df;
+  --accent:#f6bf83;
+  --danger:#9a3d31;
+  --top-pad:max(9px,env(safe-area-inset-top));
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:"Yomogi","Klee One","Yu Mincho",cursive;background:var(--bg);color:var(--text)}
+body{min-height:100dvh}
+button,input,textarea,select{font:inherit}
+button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+button:disabled{opacity:.45;cursor:not-allowed}
+.coupon-app{width:min(100%,820px);min-height:100dvh;margin:0 auto;padding:var(--top-pad) 10px calc(18px + env(safe-area-inset-bottom))}
+.coupon-top{position:sticky;z-index:20;top:0;display:grid;grid-template-columns:88px minmax(0,1fr) 88px;gap:7px;align-items:center;padding:2px 0 9px;background:var(--bg)}
+.coupon-back,.coupon-title,.coupon-add-top{min-height:52px;border:2px solid var(--btn);border-radius:13px;font-weight:700}
+.coupon-back{background:var(--card);color:var(--text)}
+.coupon-title{display:grid;place-items:center;background:var(--card);font-size:clamp(1.08rem,4.5vw,1.34rem);text-align:center}
+.coupon-add-top{background:var(--accent);color:var(--text);font-size:1.45rem}
+.page-status{min-height:1.5em;margin:0 3px 8px;color:var(--sub);font-size:.9rem;font-weight:700;text-align:center}
+.page-status.is-error{color:var(--danger)}
+.coupon-list{display:grid;gap:10px}
+.coupon-card{display:grid;grid-template-columns:112px minmax(0,1fr);gap:11px;padding:11px;border:2px solid rgba(140,119,98,.55);border-radius:18px;background:rgba(255,250,241,.96);box-shadow:0 4px 14px rgba(88,58,31,.10)}
+.coupon-cover{width:112px;aspect-ratio:1;border:2px solid rgba(140,119,98,.55);border-radius:13px;background:#fffdf8;object-fit:cover;display:block}
+.coupon-info{min-width:0;display:flex;flex-direction:column;gap:6px}
+.coupon-name{margin:0;font-size:1.08rem;line-height:1.3;font-weight:700;overflow-wrap:anywhere}
+.coupon-meta{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.coupon-type{display:inline-flex;align-items:center;min-height:25px;padding:2px 8px;border:2px solid rgba(140,119,98,.55);border-radius:8px;background:var(--btn-soft);font-size:.78rem;font-weight:700}
+.coupon-total{font-size:.88rem;font-weight:700}
+.expiry-list{display:grid;gap:3px;padding:5px 0;border-top:1px solid rgba(140,119,98,.35);border-bottom:1px solid rgba(140,119,98,.35)}
+.expiry-row{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:.86rem;font-weight:700}
+.availability{font-size:.72rem;color:var(--sub);text-align:right}
+.use-btn,.dialog-btn,.form-submit{min-height:45px;border:2px solid var(--btn);border-radius:11px;background:var(--btn);color:#fff;font-weight:700}
+.use-btn{margin-top:auto;width:100%}
+.empty-card,.add-card{min-height:120px;display:grid;place-items:center;border:2px solid rgba(140,119,98,.55);border-radius:18px;background:rgba(255,250,241,.82);font-weight:700;text-align:center;padding:16px}
+.add-card{width:100%;color:var(--text);font-size:2.1rem;background:var(--accent);cursor:pointer}
+.add-card span{display:block;font-size:.9rem}
+.screen{position:fixed;z-index:50;inset:0;display:none;overflow:auto;background:var(--bg)}
+.screen.is-open{display:block}
+.screen-wrap{width:min(100%,820px);min-height:100dvh;margin:0 auto;padding:var(--top-pad) 10px calc(18px + env(safe-area-inset-bottom));display:grid;align-content:start;gap:10px}
+.form-card,.reservation-card{display:grid;gap:11px;padding:13px;border:2px solid rgba(140,119,98,.55);border-radius:18px;background:var(--card);box-shadow:0 4px 14px rgba(88,58,31,.10)}
+.field{display:grid;gap:5px;font-weight:700}
+.field input,.field textarea,.field select{width:100%;min-width:0;border:2px solid rgba(140,119,98,.55);border-radius:11px;background:#fffdf8;color:var(--text);outline:none}
+.field input,.field select{min-height:48px;padding:7px 10px}
+.field textarea{min-height:126px;padding:10px;resize:vertical;line-height:1.45}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--border);box-shadow:0 0 0 3px rgba(140,119,98,.14)}
+.field-note{color:var(--sub);font-size:.78rem;font-weight:400}
+.type-fields[hidden]{display:none}
+.form-actions,.reservation-actions{display:grid;grid-template-columns:1fr 1.35fr;gap:8px}
+.dialog-btn.is-soft{background:var(--card);color:var(--text)}
+.dialog-btn.is-accent{background:var(--accent);color:var(--text)}
+.registration-result{min-height:1.5em;color:var(--sub);text-align:center;font-weight:700}
+.registration-result.is-error{color:var(--danger)}
+.reservation-layer{position:fixed;z-index:80;inset:0;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(40,32,24,.48)}
+.reservation-layer.is-open{display:flex}
+.reservation-card{width:min(100%,430px)}
+.reservation-title{margin:0;text-align:center;font-size:1.2rem}
+.reservation-summary{display:grid;gap:5px;text-align:center;font-weight:700}
+.countdown{font-size:1.35rem;color:var(--danger)}
+.quantity-control{display:grid;grid-template-columns:52px minmax(0,1fr) 52px;gap:7px;align-items:center}
+.quantity-control button{height:48px;border:2px solid var(--btn);border-radius:10px;background:var(--accent);font-size:1.3rem;font-weight:700}
+.quantity-control input{height:48px;min-width:0;border:2px solid var(--border);border-radius:10px;background:#fffdf8;text-align:center;font-weight:700}
+.download-btn{width:100%;background:var(--accent);color:var(--text)}
+.confirm-btn{background:var(--danger)}
+.reservation-message{min-height:1.4em;color:var(--sub);font-size:.85rem;text-align:center;font-weight:700}
+.reservation-message.is-error{color:var(--danger)}
+@media(max-width:430px){
+  .coupon-top{grid-template-columns:74px minmax(0,1fr) 64px;gap:5px}
+  .coupon-back,.coupon-title,.coupon-add-top{min-height:47px}
+  .coupon-card{grid-template-columns:96px minmax(0,1fr);gap:9px;padding:9px}
+  .coupon-cover{width:96px}
+  .coupon-name{font-size:1rem}
+  .expiry-row{font-size:.8rem}
+}
+@media(max-width:350px){
+  .coupon-card{grid-template-columns:82px minmax(0,1fr)}
+  .coupon-cover{width:82px}
+}

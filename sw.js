@@ -1,7 +1,11 @@
-const CACHE='url-format-shisa-v9-calculator-final';
+const CACHE='url-format-shisa-v10-coupons';
 const CORE=[
   './',
   './index.html',
+  './coupons.html',
+  './coupon.css',
+  './coupon.js',
+  './coupon-config.js',
   './manifest.webmanifest',
   './shisa-maskable.png',
   './link-1-transparent.png',
@@ -23,6 +27,8 @@ self.addEventListener('activate',event=>{
 });
 self.addEventListener('fetch',event=>{
   if(event.request.method!=='GET')return;
+  const requestUrl=new URL(event.request.url);
+  if(requestUrl.origin!==self.location.origin||requestUrl.pathname.startsWith('/api/'))return;
   event.respondWith(
     fetch(event.request).then(response=>{
       const copy=response.clone();

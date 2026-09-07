@@ -1,0 +1,15 @@
+name = "self-use-coupon-api-test"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+[[d1_databases]]
+binding = "COUPON_DB"
+database_name = "coupon-test"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[r2_buckets]]
+binding = "COUPON_IMAGES"
+bucket_name = "coupon-test"
+
+[vars]
+ALLOWED_ORIGINS = "http://127.0.0.1:4173"

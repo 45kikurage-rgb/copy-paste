@@ -588,8 +588,8 @@ textarea::placeholder{color:#9b8f84;opacity:1}
     </button>
   </div>
   <div class="quick-item" role="button" tabindex="0">
-    <div class="quick-label">リンク4</div>
-    <button class="quick-link" type="button" data-url="" aria-label="リンク4（未設定）">
+    <div class="quick-label">自己利用分</div>
+    <button class="quick-link" type="button" data-url="./coupons.html" data-target="same" aria-label="自己利用分のクーポン管理を開く">
       <span class="quick-icon-frame"><img class="quick-icon" src="./link-4-transparent.png" alt=""></span>
     </button>
   </div>
@@ -766,7 +766,8 @@ shareBtn.addEventListener('click',()=>{
 function openQuickItem(item){
   const button=item.querySelector('.quick-link');
   const url=button?.dataset.url||'';
-  if(url){window.open(url,'_blank','noopener,noreferrer')}
+  if(url&&button.dataset.target==='same'){window.location.href=url}
+  else if(url){window.open(url,'_blank','noopener,noreferrer')}
   else{
     status.textContent='リンク先は未設定です';
     setTimeout(()=>status.textContent='',1800);

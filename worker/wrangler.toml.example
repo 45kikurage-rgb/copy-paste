@@ -1,0 +1,17 @@
+name = "self-use-coupon-api"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# 作成済みのD1/R2をCloudflare DashboardでBindingしてください。
+# このファイルにはIDやSecretを書かないでください。
+[[d1_databases]]
+binding = "COUPON_DB"
+database_name = "YOUR_D1_DATABASE_NAME"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "COUPON_IMAGES"
+bucket_name = "YOUR_R2_BUCKET_NAME"
+
+[vars]
+ALLOWED_ORIGINS = "https://45kikurage-rgb.github.io"
