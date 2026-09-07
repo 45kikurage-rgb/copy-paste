@@ -1,5 +1,5 @@
 name = "coupon-manager-api"
-main = "src/edit-wrapper.js"
+main = "src/maintenance-wrapper.js"
 compatibility_date = "2026-08-01"
 
 [[d1_databases]]
@@ -13,3 +13,6 @@ bucket_name = "coupon-images"
 
 [vars]
 ALLOWED_ORIGINS = "https://45kikurage-rgb.github.io"
+
+[triggers]
+crons = ["15 18 * * *"]
