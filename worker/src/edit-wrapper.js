@@ -7,17 +7,36 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
-    const match = path.match(/^\/api\/coupons\/([^/]+)\/edit$/);
-    if (request.method === 'POST' && match) {
+    const editMatch = path.match(/^\/api\/coupons\/([^/]+)\/edit$/);
+    const deleteMatch = path.match(/^\/api\/coupons\/([^/]+)$/);
+
+    if (request.method === 'OPTIONS' && (editMatch || deleteMatch)) {
+      if (!isOriginAllowed(request, env)) return json(request, env, { error: 'このサイトからは利用できません。' }, 403);
+      return corsEmpty(request, env);
+    }
+
+    if (request.method === 'POST' && editMatch) {
       try {
         if (!env.COUPON_DB || !env.COUPON_IMAGES) return json(request, env, { error: 'D1/R2 Bindingが未設定です。' }, 500);
         if (!isOriginAllowed(request, env)) return json(request, env, { error: 'このサイトからは利用できません。' }, 403);
-        return await editCoupon(request, env, decodeURIComponent(match[1]));
+        return await editCoupon(request, env, decodeURIComponent(editMatch[1]));
       } catch (error) {
         console.error(error);
         return json(request, env, { error: error?.message || '編集に失敗しました。' }, Number(error?.status) || 500);
       }
     }
+
+    if (request.method === 'DELETE' && deleteMatch) {
+      try {
+        if (!env.COUPON_DB || !env.COUPON_IMAGES) return json(request, env, { error: 'D1/R2 Bindingが未設定です。' }, 500);
+        if (!isOriginAllowed(request, env)) return json(request, env, { error: 'このサイトからは利用できません。' }, 403);
+        return await deleteCoupon(request, env, decodeURIComponent(deleteMatch[1]));
+      } catch (error) {
+        console.error(error);
+        return json(request, env, { error: error?.message || '削除に失敗しました。' }, Number(error?.status) || 500);
+      }
+    }
+
     return baseWorker.fetch(request, env);
   }
 };
@@ -29,16 +48,50 @@ class EditError extends Error {
   }
 }
 
-async function editCoupon(request, env, couponId) {
-  const now = Math.floor(Date.now() / 1000);
-  const coupon = await env.COUPON_DB.prepare('SELECT id, name, name_key, coupon_type, cover_object_key FROM coupons WHERE id = ?').bind(couponId).first();
-  if (!coupon) throw new EditError(404, 'クーポンが見つかりません。');
-
+async function ensureNotReserved(env, couponId, now, action = '編集') {
   const active = await env.COUPON_DB.prepare(`
     SELECT COUNT(*) AS count FROM reservations
     WHERE coupon_id = ? AND status IN ('reserved','pending_confirmation') AND expires_at > ?
   `).bind(couponId, now).first();
-  if (Number(active?.count || 0) > 0) throw new EditError(409, 'このクーポンは現在予約中のため編集できません。');
+  if (Number(active?.count || 0) > 0) throw new EditError(409, `このクーポンは現在予約中のため${action}できません。`);
+}
+
+async function deleteCoupon(request, env, couponId) {
+  const now = Math.floor(Date.now() / 1000);
+  const coupon = await env.COUPON_DB.prepare('SELECT id, cover_object_key FROM coupons WHERE id = ?').bind(couponId).first();
+  if (!coupon) throw new EditError(404, 'クーポンが見つかりません。');
+  await ensureNotReserved(env, couponId, now, '削除');
+
+  const itemRows = await env.COUPON_DB.prepare(`
+    SELECT i.object_key
+    FROM coupon_items i
+    JOIN coupon_expiries e ON e.id = i.expiry_id
+    WHERE e.coupon_id = ? AND i.object_key IS NOT NULL
+  `).bind(couponId).all();
+  const objectKeys = (itemRows.results || []).map(row => row.object_key).filter(Boolean);
+  if (coupon.cover_object_key) objectKeys.push(coupon.cover_object_key);
+
+  const results = await env.COUPON_DB.batch([
+    env.COUPON_DB.prepare(`DELETE FROM coupon_items WHERE expiry_id IN (SELECT id FROM coupon_expiries WHERE coupon_id = ?)` ).bind(couponId),
+    env.COUPON_DB.prepare('DELETE FROM reservations WHERE coupon_id = ?').bind(couponId),
+    env.COUPON_DB.prepare('DELETE FROM coupon_expiries WHERE coupon_id = ?').bind(couponId),
+    env.COUPON_DB.prepare('DELETE FROM coupons WHERE id = ?').bind(couponId)
+  ]);
+  if (!Number(results[3]?.meta?.changes || 0)) throw new EditError(409, 'クーポンを削除できませんでした。もう一度お試しください。');
+
+  if (objectKeys.length) {
+    try { await env.COUPON_IMAGES.delete([...new Set(objectKeys)]); }
+    catch (error) { console.error('R2 cleanup failed after coupon deletion', error); }
+  }
+
+  return json(request, env, { ok: true, deleted: true });
+}
+
+async function editCoupon(request, env, couponId) {
+  const now = Math.floor(Date.now() / 1000);
+  const coupon = await env.COUPON_DB.prepare('SELECT id, name, name_key, coupon_type, cover_object_key FROM coupons WHERE id = ?').bind(couponId).first();
+  if (!coupon) throw new EditError(404, 'クーポンが見つかりません。');
+  await ensureNotReserved(env, couponId, now, '編集');
 
   const form = await request.formData();
   const name = String(form.get('name') || '').trim();
@@ -172,6 +225,20 @@ async function sha256Buffer(buffer) {
 function extensionFor(mimeType) {
   const map = { 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif' };
   return map[mimeType] || 'jpg';
+}
+
+function corsEmpty(request, env) {
+  const origin = request.headers.get('Origin');
+  const headers = new Headers({
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Reservation-Token',
+    'Cache-Control': 'no-store'
+  });
+  if (origin && isOriginAllowed(request, env)) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Vary', 'Origin');
+  }
+  return new Response(null, { status: 204, headers });
 }
 
 function json(request, env, data, status = 200) {
