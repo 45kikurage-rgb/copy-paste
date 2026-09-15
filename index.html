@@ -523,6 +523,82 @@ textarea::placeholder{color:#9b8f84;opacity:1}
  .calc-special-row,.calc-manage-inline,.unit-price-box,.calc-control-v2 .calc-back-inline{min-height:54px}
 }
 
+/* 商品名・容量の簡易確認 */
+.coupon-check-btn{
+  flex:none;
+  min-height:32px;
+  padding:4px 9px;
+  border:2px solid var(--btn);
+  border-radius:10px;
+  background:#f6bf83;
+  color:var(--text);
+  font-size:clamp(.68rem,2.9vw,.84rem);
+  line-height:1.2;
+  font-weight:700;
+  white-space:nowrap;
+  box-shadow:0 2px 0 rgba(60,48,38,.22);
+}
+.coupon-check-btn:active{transform:translateY(1px);box-shadow:0 1px 0 rgba(60,48,38,.22)}
+.coupon-modal{
+  position:fixed;
+  inset:0;
+  z-index:1200;
+  display:none;
+  place-items:center;
+  padding:18px 14px calc(18px + env(safe-area-inset-bottom));
+  background:rgba(40,32,24,.58);
+  backdrop-filter:blur(3px);
+}
+.coupon-modal.is-open{display:grid}
+.coupon-dialog{
+  width:min(100%,520px);
+  max-height:min(82dvh,680px);
+  overflow:auto;
+  padding:15px;
+  border:2px solid rgba(140,119,98,.72);
+  border-radius:20px;
+  background:var(--card);
+  color:var(--text);
+  box-shadow:0 12px 34px rgba(60,48,38,.28);
+}
+.coupon-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.coupon-dialog-title{margin:0;font-size:1.28rem;line-height:1.35}
+.coupon-dialog-x{
+  flex:none;width:38px;height:38px;padding:0;border:2px solid rgba(140,119,98,.5);
+  border-radius:11px;background:var(--btn-soft);color:var(--text);font-size:1.25rem;font-weight:700
+}
+.coupon-dialog-x:disabled{opacity:.35}
+.coupon-phase{min-height:1.6em;margin:12px 0 8px;color:var(--sub);font-weight:700}
+.coupon-progress-box{padding:12px;border:2px solid rgba(140,119,98,.38);border-radius:14px;background:#fffdf8}
+.coupon-progress-label{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px;font-weight:700}
+.coupon-progress-track{height:12px;overflow:hidden;border-radius:999px;background:#eadfce}
+.coupon-progress-bar{width:0;height:100%;border-radius:inherit;background:#d8985d;transition:width .2s ease}
+.coupon-result{margin-top:13px}
+.coupon-result-summary{display:flex;justify-content:space-between;gap:8px;margin:0 0 10px;font-weight:700}
+.coupon-table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border:2px solid rgba(140,119,98,.42);border-radius:13px;background:#fffdf8;font-family:inherit}
+.coupon-table th,.coupon-table td{padding:9px 7px;border-bottom:1px solid rgba(140,119,98,.3);text-align:left;vertical-align:middle}
+.coupon-table th{color:var(--sub);background:#fff4df;font-size:.82rem}
+.coupon-table th:nth-child(2),.coupon-table td:nth-child(2){text-align:center;white-space:nowrap}
+.coupon-table th:last-child,.coupon-table td:last-child{text-align:right;white-space:nowrap}
+.coupon-table tr:last-child td{border-bottom:0}
+.coupon-table td:first-child{font-weight:700}
+.coupon-note{margin:10px 2px 0;color:var(--sub);font-size:.84rem;line-height:1.55}
+.coupon-error{margin-top:12px;padding:10px;border:2px solid #c98778;border-radius:12px;background:#fff0e9;color:#7d3529;font-weight:700}
+.coupon-dialog-actions{display:grid;grid-template-columns:1fr 1.35fr;gap:8px;margin-top:14px}
+.coupon-dialog-actions button{
+  min-height:48px;padding:8px;border:2px solid var(--btn);border-radius:12px;
+  font-size:.9rem;line-height:1.25;font-weight:700
+}
+.coupon-close-btn{background:var(--btn-soft);color:var(--text)}
+.coupon-main-btn{background:var(--btn);color:#fff}
+.coupon-dialog-actions button:disabled{opacity:.38}
+[hidden]{display:none!important}
+@media(max-width:360px){
+  .coupon-check-btn{padding-inline:6px;font-size:.66rem}
+  .coupon-dialog{padding:12px}
+  .coupon-table th,.coupon-table td{padding:8px 5px;font-size:.82rem}
+}
+
 </style>
 </head>
 <body>
@@ -559,10 +635,7 @@ textarea::placeholder{color:#9b8f84;opacity:1}
   <section class="card input-card">
     <div class="section-head">
       <label for="input">▶貼りつけ</label>
-      <div class="option">
-        <input type="checkbox" id="blankLine" checked>
-        <label for="blankLine">空行あり</label>
-      </div>
+      <button class="coupon-check-btn" id="couponCheckBtn" type="button">商品名／容量確認</button>
     </div>
     <textarea id="input" placeholder="1&#10;https://example.com/aaa&#10;2&#10;https://example.com/bbb"></textarea>
   </section>
@@ -595,6 +668,39 @@ textarea::placeholder{color:#9b8f84;opacity:1}
   </div>
 </nav>
 
+
+<div class="coupon-modal" id="couponCheckModal" role="dialog" aria-modal="true" aria-labelledby="couponCheckTitle" aria-hidden="true">
+  <section class="coupon-dialog">
+    <div class="coupon-dialog-head">
+      <h2 class="coupon-dialog-title" id="couponCheckTitle">商品名／容量確認</h2>
+      <button class="coupon-dialog-x" id="couponCheckX" type="button" aria-label="閉じる">×</button>
+    </div>
+    <p class="coupon-phase" id="couponCheckPhase" aria-live="polite">確認の準備中です</p>
+    <div class="coupon-progress-box" id="couponProgressBox">
+      <div class="coupon-progress-label">
+        <span id="couponProgressCount">0 / 0件</span>
+        <span id="couponProgressPercent">0%</span>
+      </div>
+      <div class="coupon-progress-track" aria-hidden="true"><div class="coupon-progress-bar" id="couponProgressBar"></div></div>
+    </div>
+    <div class="coupon-result" id="couponCheckResult" hidden>
+      <div class="coupon-result-summary">
+        <span id="couponResultTotal">URL合計 0件</span>
+        <span id="couponResultTime">確認時間 0秒</span>
+      </div>
+      <table class="coupon-table">
+        <thead><tr><th>商品名</th><th>容量</th><th>本数</th></tr></thead>
+        <tbody id="couponResultRows"></tbody>
+      </table>
+      <p class="coupon-note" id="couponResultNote"></p>
+    </div>
+    <div class="coupon-error" id="couponCheckError" hidden></div>
+    <div class="coupon-dialog-actions">
+      <button class="coupon-close-btn" id="couponCheckClose" type="button">閉じる</button>
+      <button class="coupon-main-btn" id="couponCheckMain" type="button">大元サイトで詳しく見る</button>
+    </div>
+  </section>
+</div>
 
 <section class="calculator-screen" id="calculatorScreen" aria-hidden="true">
   <div class="calc-wrap calc-v2-wrap">
@@ -682,7 +788,6 @@ textarea::placeholder{color:#9b8f84;opacity:1}
 <script>
 const input=document.getElementById('input');
 const output=document.getElementById('output');
-const blankLine=document.getElementById('blankLine');
 const copyBtn=document.getElementById('copyBtn');
 const shareBtn=document.getElementById('shareBtn');
 const clearBtn=document.getElementById('clearBtn');
@@ -738,7 +843,7 @@ function extractPairs(text){
 }
 function format(){
   const pairs=extractPairs(input.value);
-  const sep=blankLine.checked?'\n\n':'\n';
+  const sep='\n\n';
   output.value=pairs.map((p,i)=>`${p.num||String(i+1)}${sep}${p.url}`).join(sep);
   count.textContent=`${String(pairs.length).replace(/[0-9]/g,d=>String.fromCharCode(d.charCodeAt(0)+0xFEE0))}件`;
   status.textContent='';
@@ -752,7 +857,6 @@ function clearAll(){
 }
 
 input.addEventListener('input',format);
-blankLine.addEventListener('change',format);
 clearBtn.addEventListener('click',clearAll);
 copyBtn.addEventListener('click',async()=>{
   if(!output.value){status.textContent='内容なし';return}
@@ -782,6 +886,162 @@ document.querySelectorAll('.quick-item').forEach(item=>{
   });
 });
 
+// ===== 商品名・容量の簡易確認 =====
+const couponCheckBtn=document.getElementById('couponCheckBtn');
+const couponCheckModal=document.getElementById('couponCheckModal');
+const couponCheckX=document.getElementById('couponCheckX');
+const couponCheckClose=document.getElementById('couponCheckClose');
+const couponCheckMain=document.getElementById('couponCheckMain');
+const couponCheckPhase=document.getElementById('couponCheckPhase');
+const couponProgressBox=document.getElementById('couponProgressBox');
+const couponProgressCount=document.getElementById('couponProgressCount');
+const couponProgressPercent=document.getElementById('couponProgressPercent');
+const couponProgressBar=document.getElementById('couponProgressBar');
+const couponCheckResult=document.getElementById('couponCheckResult');
+const couponResultTotal=document.getElementById('couponResultTotal');
+const couponResultTime=document.getElementById('couponResultTime');
+const couponResultRows=document.getElementById('couponResultRows');
+const couponResultNote=document.getElementById('couponResultNote');
+const couponCheckError=document.getElementById('couponCheckError');
+const COUPON_ANALYZER_API='https://seven-coupon-size-counter.regal-elk-8007.chatgpt.site/api/analyze';
+const COUPON_ANALYZER_SITE='https://seven-coupon-size-counter.regal-elk-8007.chatgpt.site';
+let couponCheckRunning=false;
+
+function openCouponModal(){
+  couponCheckModal.classList.add('is-open');
+  couponCheckModal.setAttribute('aria-hidden','false');
+}
+function closeCouponModal(){
+  if(couponCheckRunning)return;
+  couponCheckModal.classList.remove('is-open');
+  couponCheckModal.setAttribute('aria-hidden','true');
+}
+function setCouponProgress(done,total,label){
+  const percent=total?Math.round(done/total*100):0;
+  couponCheckPhase.textContent=label;
+  couponProgressCount.textContent=`${done} / ${total}件`;
+  couponProgressPercent.textContent=`${percent}%`;
+  couponProgressBar.style.width=`${percent}%`;
+}
+function getCouponItems(){
+  const seen=new Set();
+  return extractPairs(input.value).flatMap((pair,index)=>{
+    try{
+      const url=new URL(pair.url.replace(/[.,;]+$/,''));
+      if(url.protocol!=='https:'||url.hostname!=='coupon.sej.co.jp'||url.pathname!=='/order/cpnsp_03.do'||!url.searchParams.has('hansoku_id')||seen.has(url.href))return[];
+      seen.add(url.href);
+      const label=/^\d{1,5}$/.test(pair.num||'')?pair.num:String(index+1);
+      return[{label,url:url.href}];
+    }catch(e){return[]}
+  });
+}
+function couponResolved(item){
+  return item.status==='used'||(item.status==='ok'&&(item.size==='350'||item.size==='500')&&item.product!=='商品名不明');
+}
+async function analyzeCouponPass(items,label){
+  const results=[];
+  setCouponProgress(0,items.length,label);
+  for(let start=0;start<items.length;start+=6){
+    const batch=items.slice(start,start+6);
+    try{
+      const response=await fetch(COUPON_ANALYZER_API,{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({items:batch})
+      });
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(data.error||'確認に失敗しました');
+      results.push(...data.results);
+    }catch(error){
+      results.push(...batch.map(item=>({...item,product:'商品名不明',size:'unknown',status:'error',message:error instanceof Error?error.message:'確認に失敗しました'})));
+    }
+    setCouponProgress(Math.min(start+batch.length,items.length),items.length,label);
+  }
+  return results;
+}
+function addCouponResultRow(product,size,count){
+  const row=document.createElement('tr');
+  [product,size,`${count}本`].forEach(value=>{
+    const cell=document.createElement('td');
+    cell.textContent=value;
+    row.appendChild(cell);
+  });
+  couponResultRows.appendChild(row);
+}
+function renderCouponResults(items,elapsedMs){
+  const groups=new Map();
+  items.forEach(item=>{
+    let product='商品名不明';
+    let size='判定不能';
+    if(item.status==='used'){product='利用済み';size='—'}
+    else if(couponResolved(item)){product=item.product;size=`${item.size}缶`}
+    const key=`${product}\u0000${size}`;
+    const group=groups.get(key)||{product,size,count:0};
+    group.count+=1;
+    groups.set(key,group);
+  });
+  couponResultRows.innerHTML='';
+  [...groups.values()]
+    .sort((a,b)=>{
+      if(a.product==='商品名不明')return 1;
+      if(b.product==='商品名不明')return-1;
+      if(a.product==='利用済み')return 1;
+      if(b.product==='利用済み')return-1;
+      return a.product.localeCompare(b.product,'ja')||b.size.localeCompare(a.size,'ja');
+    })
+    .forEach(group=>addCouponResultRow(group.product,group.size,group.count));
+  const unresolved=items.filter(item=>!couponResolved(item)).length;
+  couponResultTotal.textContent=`URL合計 ${items.length}件`;
+  couponResultTime.textContent=`確認時間 ${Math.max(1,Math.round(elapsedMs/1000))}秒`;
+  couponResultNote.textContent=unresolved
+    ? `${unresolved}件は3回再確認しても判定できませんでした。必要に応じて大元サイトで確認してください。`
+    : 'すべての商品名と容量を確認できました。';
+  couponCheckResult.hidden=false;
+}
+async function runCouponCheck(){
+  if(couponCheckRunning)return;
+  const items=getCouponItems();
+  openCouponModal();
+  couponCheckError.hidden=true;
+  couponCheckResult.hidden=true;
+  couponProgressBox.hidden=false;
+  couponCheckX.disabled=true;
+  couponCheckClose.disabled=true;
+  couponCheckMain.disabled=true;
+  if(!items.length){
+    couponProgressBox.hidden=true;
+    couponCheckPhase.textContent='確認できませんでした';
+    couponCheckError.textContent='貼り付け欄にセブンのクーポンURLが見つかりません。';
+    couponCheckError.hidden=false;
+    couponCheckX.disabled=false;
+    couponCheckClose.disabled=false;
+    couponCheckMain.disabled=false;
+    return;
+  }
+  couponCheckRunning=true;
+  const started=performance.now();
+  let finalByUrl=new Map();
+  let pending=items;
+  for(let pass=0;pass<=3&&pending.length;pass+=1){
+    const label=pass===0?'初回解析中':`再解析中（${pass}/3）`;
+    const passResults=await analyzeCouponPass(pending,label);
+    passResults.forEach(item=>finalByUrl.set(item.url,item));
+    pending=passResults.filter(item=>!couponResolved(item)).map(item=>({label:item.label,url:item.url}));
+  }
+  const ordered=items.map(item=>finalByUrl.get(item.url)||({...item,product:'商品名不明',size:'unknown',status:'error'}));
+  setCouponProgress(items.length,items.length,'解析完了');
+  renderCouponResults(ordered,performance.now()-started);
+  couponCheckRunning=false;
+  couponCheckX.disabled=false;
+  couponCheckClose.disabled=false;
+  couponCheckMain.disabled=false;
+}
+couponCheckBtn.addEventListener('click',runCouponCheck);
+couponCheckX.addEventListener('click',closeCouponModal);
+couponCheckClose.addEventListener('click',closeCouponModal);
+couponCheckMain.addEventListener('click',()=>window.open(COUPON_ANALYZER_SITE,'_blank','noopener,noreferrer'));
+couponCheckModal.addEventListener('click',event=>{if(event.target===couponCheckModal)closeCouponModal()});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&couponCheckModal.classList.contains('is-open'))closeCouponModal()});
 
 
 // ===== 計算表 =====
