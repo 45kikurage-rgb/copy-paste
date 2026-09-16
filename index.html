@@ -928,7 +928,9 @@ function getCouponItems(){
   return extractPairs(input.value).flatMap((pair,index)=>{
     try{
       const url=new URL(pair.url.replace(/[.,;]+$/,''));
-      if(url.protocol!=='https:'||url.hostname!=='coupon.sej.co.jp'||url.pathname!=='/order/cpnsp_03.do'||!url.searchParams.has('hansoku_id')||seen.has(url.href))return[];
+      const isSeven=url.protocol==='https:'&&url.hostname==='coupon.sej.co.jp'&&url.pathname==='/order/cpnsp_03.do'&&url.searchParams.has('hansoku_id');
+      const isFamima=url.protocol==='https:'&&url.hostname==='ncpfa.famima.com'&&url.pathname==='/prd/ebcweb'&&['eKey','cpNo','gyNo'].every(key=>url.searchParams.has(key));
+      if((!isSeven&&!isFamima)||seen.has(url.href))return[];
       seen.add(url.href);
       const label=/^\d{1,5}$/.test(pair.num||'')?pair.num:String(index+1);
       return[{label,url:url.href}];
@@ -936,27 +938,34 @@ function getCouponItems(){
   });
 }
 function couponResolved(item){
-  return item.status==='used'||(item.status==='ok'&&(item.size==='350'||item.size==='500')&&item.product!=='商品名不明');
+  return item.status==='used'||(item.status==='ok'&&['350','500','other','none'].includes(item.size)&&item.product!=='商品名不明');
 }
 async function analyzeCouponPass(items,label){
-  const results=[];
+  const results=new Array(items.length);
+  let cursor=0;
+  let completed=0;
   setCouponProgress(0,items.length,label);
-  for(let start=0;start<items.length;start+=6){
-    const batch=items.slice(start,start+6);
-    try{
-      const response=await fetch(COUPON_ANALYZER_API,{
-        method:'POST',
-        headers:{'content-type':'application/json'},
-        body:JSON.stringify({items:batch})
-      });
-      const data=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(data.error||'確認に失敗しました');
-      results.push(...data.results);
-    }catch(error){
-      results.push(...batch.map(item=>({...item,product:'商品名不明',size:'unknown',status:'error',message:error instanceof Error?error.message:'確認に失敗しました'})));
+  async function worker(){
+    while(cursor<items.length){
+      const index=cursor++;
+      const item=items[index];
+      try{
+        const response=await fetch(COUPON_ANALYZER_API,{
+          method:'POST',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({items:[item]})
+        });
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok||!data.results?.[0])throw new Error(data.error||'確認に失敗しました');
+        results[index]=data.results[0];
+      }catch(error){
+        results[index]={...item,product:'商品名不明',size:'unknown',status:'error',message:error instanceof Error?error.message:'確認に失敗しました'};
+      }
+      completed+=1;
+      setCouponProgress(completed,items.length,label);
     }
-    setCouponProgress(Math.min(start+batch.length,items.length),items.length,label);
   }
+  await Promise.all(Array.from({length:Math.min(4,items.length)},worker));
   return results;
 }
 function addCouponResultRow(product,size,count){
@@ -974,7 +983,10 @@ function renderCouponResults(items,elapsedMs){
     let product='商品名不明';
     let size='判定不能';
     if(item.status==='used'){product='利用済み';size='—'}
-    else if(couponResolved(item)){product=item.product;size=`${item.size}缶`}
+    else if(couponResolved(item)){
+      product=item.product;
+      size=item.size==='350'?'350ml':item.size==='500'?'500ml':item.size==='other'?(item.capacity||'その他'):item.size==='none'?'容量表記なし':'判定不能';
+    }
     const key=`${product}\u0000${size}`;
     const group=groups.get(key)||{product,size,count:0};
     group.count+=1;
@@ -994,7 +1006,7 @@ function renderCouponResults(items,elapsedMs){
   couponResultTotal.textContent=`URL合計 ${items.length}件`;
   couponResultTime.textContent=`確認時間 ${Math.max(1,Math.round(elapsedMs/1000))}秒`;
   couponResultNote.textContent=unresolved
-    ? `${unresolved}件は3回再確認しても判定できませんでした。必要に応じて大元サイトで確認してください。`
+    ? `${unresolved}件は2回再確認しても判定できませんでした。必要に応じて大元サイトで確認してください。`
     : 'すべての商品名と容量を確認できました。';
   couponCheckResult.hidden=false;
 }
@@ -1011,7 +1023,7 @@ async function runCouponCheck(){
   if(!items.length){
     couponProgressBox.hidden=true;
     couponCheckPhase.textContent='確認できませんでした';
-    couponCheckError.textContent='貼り付け欄にセブンのクーポンURLが見つかりません。';
+    couponCheckError.textContent='貼り付け欄にセブンまたはファミマのクーポンURLが見つかりません。';
     couponCheckError.hidden=false;
     couponCheckX.disabled=false;
     couponCheckClose.disabled=false;
@@ -1022,8 +1034,8 @@ async function runCouponCheck(){
   const started=performance.now();
   let finalByUrl=new Map();
   let pending=items;
-  for(let pass=0;pass<=3&&pending.length;pass+=1){
-    const label=pass===0?'初回解析中':`再解析中（${pass}/3）`;
+  for(let pass=0;pass<=2&&pending.length;pass+=1){
+    const label=pass===0?'初回解析中':`再解析中（${pass}/2）`;
     const passResults=await analyzeCouponPass(pending,label);
     passResults.forEach(item=>finalByUrl.set(item.url,item));
     pending=passResults.filter(item=>!couponResolved(item)).map(item=>({label:item.label,url:item.url}));
