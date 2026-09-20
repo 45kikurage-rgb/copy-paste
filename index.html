@@ -64,12 +64,12 @@ h1{margin:0;font-size:1.18rem;font-weight:700;letter-spacing:.02em}
 }
 .result-card{
   flex:none;
-  height:calc(50dvh - var(--top-pad) - 92px - (var(--bottom-gap) / 2));
+  height:clamp(180px,27dvh,260px);
   grid-template-rows:auto minmax(0,1fr);
 }
 .input-card{
   flex:1;
-  min-height:0;
+  min-height:125px;
   grid-template-rows:auto minmax(0,1fr);
 }
 .section-head{display:flex;align-items:flex-start;justify-content:space-between;min-height:30px;gap:8px}
@@ -539,6 +539,69 @@ textarea::placeholder{color:#9b8f84;opacity:1}
   box-shadow:0 2px 0 rgba(60,48,38,.22);
 }
 .coupon-check-btn:active{transform:translateY(1px);box-shadow:0 1px 0 rgba(60,48,38,.22)}
+.input-head-actions{display:flex;align-items:center;gap:6px;flex:none}
+.paste-input-btn{background:var(--btn-soft)}
+.line-encode-card{
+  flex:none;
+  padding:9px 11px;
+  gap:7px;
+  grid-template-rows:auto auto;
+}
+.line-encode-top{
+  min-width:0;
+  display:grid;
+  grid-template-columns:auto auto minmax(64px,.8fr) auto minmax(82px,1.25fr);
+  align-items:center;
+  gap:5px;
+}
+.line-encode-title{
+  font-size:clamp(.72rem,2.8vw,.9rem);
+  font-weight:700;
+  white-space:nowrap;
+}
+.line-encode-label{
+  font-size:clamp(.62rem,2.45vw,.78rem);
+  font-weight:700;
+  white-space:nowrap;
+}
+.line-encode-input,.line-encode-output{
+  width:100%;
+  min-width:0;
+  height:34px;
+  border:2px solid rgba(140,119,98,.42);
+  border-radius:9px;
+  padding:4px 7px;
+  background:#fffdf8;
+  color:var(--text);
+  outline:none;
+}
+.line-encode-input{font-size:clamp(.68rem,2.6vw,.82rem)}
+.line-encode-output{font-size:clamp(.58rem,2.2vw,.72rem)}
+.line-encode-input:focus{border-color:var(--border);box-shadow:0 0 0 2px rgba(140,119,98,.14)}
+.line-encode-bottom{
+  min-width:0;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 66px;
+  gap:6px;
+  align-items:center;
+}
+.line-encode-copy{
+  height:34px;
+  padding:3px 5px;
+  border:2px solid var(--btn);
+  border-radius:9px;
+  background:var(--btn);
+  color:#fff;
+  font-size:clamp(.68rem,2.6vw,.82rem);
+  font-weight:700;
+}
+.line-encode-copy:active{transform:translateY(1px)}
+@media(max-width:360px){
+  .line-encode-card{padding-inline:8px}
+  .line-encode-top{grid-template-columns:auto auto minmax(52px,.75fr) auto minmax(66px,1fr);gap:3px}
+  .line-encode-title{font-size:.68rem}
+  .line-encode-label{font-size:.6rem}
+}
 .coupon-modal{
   position:fixed;
   inset:0;
@@ -635,9 +698,26 @@ textarea::placeholder{color:#9b8f84;opacity:1}
   <section class="card input-card">
     <div class="section-head">
       <label for="input">▶貼りつけ</label>
-      <button class="coupon-check-btn" id="couponCheckBtn" type="button">商品名／容量確認</button>
+      <div class="input-head-actions">
+        <button class="coupon-check-btn paste-input-btn" id="pasteInputBtn" type="button">貼りつけ</button>
+        <button class="coupon-check-btn" id="couponCheckBtn" type="button">商品名／容量確認</button>
+      </div>
     </div>
     <textarea id="input" placeholder="1&#10;https://example.com/aaa&#10;2&#10;https://example.com/bbb"></textarea>
+  </section>
+
+  <section class="card line-encode-card" aria-label="LINEエンコード">
+    <div class="line-encode-top">
+      <div class="line-encode-title">▶LINEエンコード</div>
+      <label class="line-encode-label" for="lineOfficialId">公式LINE</label>
+      <input class="line-encode-input" id="lineOfficialId" type="text" inputmode="text" autocomplete="off" placeholder="@ID">
+      <label class="line-encode-label" for="lineMessage">メッセージ</label>
+      <input class="line-encode-input" id="lineMessage" type="text" autocomplete="off" placeholder="送りたい文字列">
+    </div>
+    <div class="line-encode-bottom">
+      <input class="line-encode-output" id="lineEncodedUrl" type="text" readonly aria-label="作成したLINE URL" placeholder="作成したURLを表示">
+      <button class="line-encode-copy" id="lineEncodeCopyBtn" type="button">コピー</button>
+    </div>
   </section>
 </main>
 
@@ -791,6 +871,11 @@ const output=document.getElementById('output');
 const copyBtn=document.getElementById('copyBtn');
 const shareBtn=document.getElementById('shareBtn');
 const clearBtn=document.getElementById('clearBtn');
+const pasteInputBtn=document.getElementById('pasteInputBtn');
+const lineOfficialId=document.getElementById('lineOfficialId');
+const lineMessage=document.getElementById('lineMessage');
+const lineEncodedUrl=document.getElementById('lineEncodedUrl');
+const lineEncodeCopyBtn=document.getElementById('lineEncodeCopyBtn');
 const status=document.getElementById('status');
 const count=document.getElementById('count');
 const authGate=document.getElementById('authGate');
@@ -858,6 +943,51 @@ function clearAll(){
 
 input.addEventListener('input',format);
 clearBtn.addEventListener('click',clearAll);
+pasteInputBtn.addEventListener('click',async()=>{
+  try{
+    const text=await navigator.clipboard.readText();
+    input.value=text;
+    format();
+    status.textContent='貼りつけました！';
+  }catch(e){
+    input.focus();
+    status.textContent='入力欄を長押しして貼りつけてください';
+  }
+  setTimeout(()=>status.textContent='',1800);
+});
+
+function updateLineEncode(){
+  let id=lineOfficialId.value.trim();
+  const message=lineMessage.value;
+  if(!id){
+    lineEncodedUrl.value='';
+    return;
+  }
+  if(!id.startsWith('@')) id='@'+id;
+  const encodedId=encodeURIComponent(id);
+  const encodedMessage=encodeURIComponent(message);
+  lineEncodedUrl.value=`https://line.me/R/oaMessage/${encodedId}/?${encodedMessage}`;
+}
+lineOfficialId.addEventListener('input',updateLineEncode);
+lineMessage.addEventListener('input',updateLineEncode);
+lineEncodeCopyBtn.addEventListener('click',async()=>{
+  if(!lineEncodedUrl.value){
+    status.textContent='公式LINEを入力してください';
+    setTimeout(()=>status.textContent='',1800);
+    return;
+  }
+  try{
+    await navigator.clipboard.writeText(lineEncodedUrl.value);
+  }catch(e){
+    lineEncodedUrl.removeAttribute('readonly');
+    lineEncodedUrl.select();
+    document.execCommand('copy');
+    lineEncodedUrl.setAttribute('readonly','');
+  }
+  status.textContent='LINE URLをコピーしました！';
+  setTimeout(()=>status.textContent='',1800);
+});
+
 copyBtn.addEventListener('click',async()=>{
   if(!output.value){status.textContent='内容なし';return}
   try{await navigator.clipboard.writeText(output.value);status.textContent='コピーしました！'}
@@ -1197,6 +1327,7 @@ if('serviceWorker' in navigator){
 }
 openAuthIfNeeded();
 format();
+updateLineEncode();
 </script>
 </body>
 </html>
