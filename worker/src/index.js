@@ -8,6 +8,7 @@ export default {
       assertBindings(env);
       if (request.method === 'OPTIONS') return corsResponse(request, env, new Response(null, { status: 204 }));
       if (!isOriginAllowed(request, env)) return json(request, env, { error: 'このサイトからは利用できません。' }, 403);
+      await ensureCouponSchema(env);
 
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/+$/, '') || '/';
@@ -18,6 +19,7 @@ export default {
       }
       if (request.method === 'GET' && path === '/api/coupons') return await listCoupons(request, env);
       if (request.method === 'POST' && path === '/api/coupons/register') return await registerCoupon(request, env);
+      if (request.method === 'POST' && path === '/api/coupons/register-auto') return await registerAutoCoupon(request, env);
 
       let match = path.match(/^\/api\/coupons\/([^/]+)\/cover$/);
       if (request.method === 'GET' && match) return await getCover(request, env, decodeURIComponent(match[1]));
@@ -57,6 +59,19 @@ class HttpError extends Error {
 
 function assertBindings(env) {
   if (!env.COUPON_DB || !env.COUPON_IMAGES) throw new HttpError(500, 'D1/R2 Bindingが未設定です。');
+}
+
+async function ensureCouponSchema(env) {
+  const info = await env.COUPON_DB.prepare('PRAGMA table_info(coupons)').all();
+  const hasRedeemPlace = (info.results || []).some(row => row.name === 'redeem_place');
+  if (!hasRedeemPlace) {
+    try {
+      await env.COUPON_DB.prepare("ALTER TABLE coupons ADD COLUMN redeem_place TEXT NOT NULL DEFAULT ''").run();
+    } catch (error) {
+      const message = String(error?.message || error || '');
+      if (!/duplicate column|already exists/i.test(message)) throw error;
+    }
+  }
 }
 
 function allowedOrigins(env) {
@@ -123,14 +138,14 @@ async function listCoupons(request, env) {
   const now = nowSeconds();
   const today = todayInTokyo();
   const result = await env.COUPON_DB.prepare(`
-    SELECT c.id, c.name, c.coupon_type, c.cover_object_key,
+    SELECT c.id, c.name, c.coupon_type, c.redeem_place, c.cover_object_key,
            e.expires_on,
            COUNT(i.id) AS remaining_count,
            SUM(CASE WHEN i.reservation_id IS NULL OR i.reservation_expires_at <= ? THEN 1 ELSE 0 END) AS available_count
     FROM coupons c
     JOIN coupon_expiries e ON e.coupon_id = c.id AND e.expires_on >= ?
     JOIN coupon_items i ON i.expiry_id = e.id
-    GROUP BY c.id, e.id
+    GROUP BY c.id, c.redeem_place, e.id
     HAVING COUNT(i.id) > 0
     ORDER BY e.expires_on ASC, c.created_at ASC
   `).bind(now, today).all();
@@ -141,6 +156,7 @@ async function listCoupons(request, env) {
       map.set(row.id, {
         id: row.id,
         name: row.name,
+        redeemPlace: row.redeem_place || '',
         type: row.coupon_type,
         coverUrl: `${new URL(request.url).origin}/api/coupons/${encodeURIComponent(row.id)}/cover?v=${encodeURIComponent(row.cover_object_key || '')}`,
         remainingCount: 0,
@@ -159,14 +175,105 @@ async function listCoupons(request, env) {
 }
 
 async function getCover(request, env, couponId) {
-  const row = await env.COUPON_DB.prepare('SELECT cover_object_key FROM coupons WHERE id = ?').bind(couponId).first();
-  if (!row?.cover_object_key) throw new HttpError(404, '代表画像がありません。');
+  const row = await env.COUPON_DB.prepare('SELECT name, redeem_place, cover_object_key FROM coupons WHERE id = ?').bind(couponId).first();
+  if (!row) throw new HttpError(404, 'クーポンがありません。');
+  if (!row.cover_object_key) {
+    const label = escapeSvgText(row.name || 'クーポン');
+    const place = escapeSvgText(row.redeem_place || '');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640"><rect width="640" height="640" fill="#fffaf1"/><rect x="24" y="24" width="592" height="592" rx="44" fill="#fde0b6" stroke="#8c7762" stroke-width="6"/><text x="320" y="292" text-anchor="middle" font-family="sans-serif" font-size="34" font-weight="700" fill="#282018">${label}</text><text x="320" y="350" text-anchor="middle" font-family="sans-serif" font-size="25" fill="#776a5e">${place}</text></svg>`;
+    return corsResponse(request, env, new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } }));
+  }
   const object = await env.COUPON_IMAGES.get(row.cover_object_key);
   if (!object) throw new HttpError(404, '代表画像がありません。');
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set('Cache-Control', 'public, max-age=3600');
   return corsResponse(request, env, new Response(object.body, { headers }));
+}
+
+
+function escapeSvgText(value) {
+  return String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]);
+}
+
+function decodeImageDataUri(value) {
+  const match = String(value || '').match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\r\n]+)$/);
+  if (!match) return null;
+  const binary = atob(match[2].replace(/\s+/g, ''));
+  if (!binary.length || binary.length > MAX_IMAGE_BYTES) return null;
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return { bytes, mimeType: match[1] };
+}
+
+async function registerAutoCoupon(request, env) {
+  const body = await readJson(request);
+  const name = String(body.name || '').trim();
+  const redeemPlace = String(body.redeemPlace || '').trim();
+  const expiresOn = String(body.expiresOn || '').trim();
+  const urlValue = normalizeUrl(String(body.url || '').trim());
+
+  if (!name || name.length > 100) throw new HttpError(400, '商品名を確認できません。');
+  if (!redeemPlace || redeemPlace.length > 60) throw new HttpError(400, '引換先を確認できません。');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(400, '利用期限を確認できません。');
+  if (expiresOn < todayInTokyo()) throw new HttpError(400, '期限切れのクーポンは登録できません。');
+
+  const fingerprint = await sha256Text(urlValue);
+  const existing = await existingFingerprints(env, [fingerprint]);
+  if (existing.has(fingerprint)) {
+    return json(request, env, { newCount: 0, duplicateCount: 1, name, redeemPlace, expiresOn });
+  }
+
+  const now = nowSeconds();
+  const nameKey = normalizeName(`${name}\u0000${redeemPlace}`);
+  const proposedCouponId = crypto.randomUUID();
+  await env.COUPON_DB.prepare(`
+    INSERT OR IGNORE INTO coupons (id, name, name_key, coupon_type, redeem_place, created_at, updated_at)
+    VALUES (?, ?, ?, 'url', ?, ?, ?)
+  `).bind(proposedCouponId, name, nameKey, redeemPlace, now, now).run();
+
+  const coupon = await env.COUPON_DB.prepare(
+    'SELECT id, cover_object_key FROM coupons WHERE name_key = ? AND coupon_type = ?'
+  ).bind(nameKey, 'url').first();
+  if (!coupon) throw new HttpError(500, 'クーポンを作成できませんでした。');
+
+  const proposedExpiryId = crypto.randomUUID();
+  await env.COUPON_DB.prepare(`
+    INSERT OR IGNORE INTO coupon_expiries (id, coupon_id, expires_on, created_at) VALUES (?, ?, ?, ?)
+  `).bind(proposedExpiryId, coupon.id, expiresOn, now).run();
+  const expiry = await env.COUPON_DB.prepare(
+    'SELECT id FROM coupon_expiries WHERE coupon_id = ? AND expires_on = ?'
+  ).bind(coupon.id, expiresOn).first();
+  if (!expiry) throw new HttpError(500, '利用期限を保存できませんでした。');
+
+  let imageSaved = Boolean(coupon.cover_object_key);
+  if (!coupon.cover_object_key && body.productImageDataUri) {
+    const image = decodeImageDataUri(body.productImageDataUri);
+    if (image) {
+      const imageHash = await sha256Buffer(image.bytes);
+      const coverKey = `covers/${coupon.id}/auto-${imageHash}.${extensionFor(image.mimeType)}`;
+      await env.COUPON_IMAGES.put(coverKey, image.bytes, { httpMetadata: { contentType: image.mimeType } });
+      await env.COUPON_DB.prepare('UPDATE coupons SET cover_object_key = ?, updated_at = ? WHERE id = ?')
+        .bind(coverKey, now, coupon.id).run();
+      imageSaved = true;
+    }
+  }
+
+  const result = await env.COUPON_DB.prepare(`
+    INSERT OR IGNORE INTO coupon_items
+      (id, expiry_id, item_type, url_value, object_key, fingerprint, original_name, mime_type, created_at)
+    VALUES (?, ?, 'url', ?, NULL, ?, NULL, NULL, ?)
+  `).bind(crypto.randomUUID(), expiry.id, urlValue, fingerprint, now).run();
+
+  const newCount = Number(result.meta?.changes || 0);
+  return json(request, env, {
+    newCount,
+    duplicateCount: newCount ? 0 : 1,
+    name,
+    redeemPlace,
+    expiresOn,
+    imageSaved
+  });
 }
 
 async function registerCoupon(request, env) {
