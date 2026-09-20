@@ -15,3 +15,4 @@ bucket_name = "YOUR_R2_BUCKET_NAME"
 
 [vars]
 ALLOWED_ORIGINS = "https://45kikurage-rgb.github.io"
+COUPON_ANALYZER_API = "https://coupon-capture.45kikurage.workers.dev/api/analyze-detail"
