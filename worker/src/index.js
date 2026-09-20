@@ -2,6 +2,7 @@ const RESERVATION_SECONDS = 10 * 60;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
 const DEFAULT_COUPON_ANALYZER_API = 'https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
+const DEFAULT_COUPON_ANALYZER_BASE = 'https://coupon-capture.45kikurage.workers.dev';
 
 export default {
   async fetch(request, env) {
@@ -207,6 +208,122 @@ function decodeImageDataUri(value) {
   return { bytes, mimeType: match[1] };
 }
 
+function analyzerBaseFromEnv(env) {
+  const configured = String(env.COUPON_ANALYZER_API || '').trim().replace(/\/$/, '');
+  if (!configured) return DEFAULT_COUPON_ANALYZER_BASE;
+  return configured.replace(/\/api\/(?:analyze-detail|analyze|capture-one)$/, '');
+}
+
+async function fetchAnalyzerJson(url, body) {
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch {
+    return { ok: false, status: 0, data: {}, networkError: true };
+  }
+  let data = {};
+  try { data = await response.json(); } catch {}
+  return { ok: response.ok, status: response.status, data, networkError: false };
+}
+
+function redeemPlaceForSite(site, brand = '') {
+  if (site === 'seven') return 'セブンイレブン';
+  if (site === 'familymart') return 'ファミリーマート';
+  if (site === 'misterdonut') return 'ミスタードーナツ';
+  if (site === 'giftee_box') return brand || 'giftee Box';
+  return brand || '';
+}
+
+function extractLatestIsoDate(value) {
+  const text = String(value || '').normalize('NFKC');
+  const values = [];
+  for (const match of text.matchAll(/(20\d{2})\s*[年\/.-]\s*(\d{1,2})\s*[月\/.-]\s*(\d{1,2})\s*日?/g)) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) continue;
+    values.push(`${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+  }
+  return values.length ? [...new Set(values)].sort().at(-1) : '';
+}
+
+function decodeBase64Text(value) {
+  try {
+    const binary = atob(String(value || ''));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return '';
+  }
+}
+
+function extractProductImageFromSvg(svg) {
+  const exact = String(svg || '').match(/<image\s+href="(data:image\/(?:png|jpeg|webp);base64,[^"]+)"\s+x="80"\s+y="250"/i);
+  if (exact) return exact[1];
+  const generic = [...String(svg || '').matchAll(/<image\b[^>]*href="(data:image\/(?:png|jpeg|webp);base64,[^"]+)"[^>]*>/gi)];
+  return generic[0]?.[1] || null;
+}
+
+async function analyzeCouponLegacy(urlValue, env) {
+  const base = analyzerBaseFromEnv(env);
+  const analysis = await fetchAnalyzerJson(`${base}/api/analyze`, { items: [{ label: '1', url: urlValue }] });
+  if (!analysis.ok) {
+    throw new HttpError(502, analysis.data.error || analysis.data.message || '既存のクーポン解析APIでも解析できませんでした。');
+  }
+  const item = analysis.data.results?.[0];
+  if (!item) throw new HttpError(422, '商品情報を読み取れませんでした。');
+  if (item.status === 'used') throw new HttpError(422, 'このクーポンは利用済みです。');
+  if (item.status !== 'ok' || !item.product || item.product === '商品名不明') {
+    throw new HttpError(422, item.message || '商品名を読み取れませんでした。');
+  }
+
+  const capture = await fetchAnalyzerJson(`${base}/api/capture-one`, { url: urlValue, mode: 'fast' });
+  if (!capture.ok || !capture.data.base64) {
+    throw new HttpError(422, capture.data.error || '利用期限・商品画像を読み取れませんでした。');
+  }
+  const svg = decodeBase64Text(capture.data.base64);
+  const expiresOn = extractLatestIsoDate(svg);
+  if (!expiresOn) throw new HttpError(422, '利用期限を読み取れませんでした。');
+
+  return {
+    product: item.product,
+    redeemPlace: redeemPlaceForSite(item.site, item.brand),
+    merchant: redeemPlaceForSite(item.site, item.brand),
+    expiresOn,
+    productImageDataUri: extractProductImageFromSvg(svg),
+    site: item.site,
+    status: 'ok',
+    analysisMode: 'legacy-fallback'
+  };
+}
+
+async function analyzeCouponForImport(urlValue, env) {
+  const detailApi = String(env.COUPON_ANALYZER_API || DEFAULT_COUPON_ANALYZER_API).trim();
+  const detail = await fetchAnalyzerJson(detailApi, { url: urlValue });
+  if (detail.ok && detail.data?.status === 'ok') return { ...detail.data, analysisMode: 'detail' };
+
+  // 本番Workerがまだ /api/analyze-detail 未反映の場合や、詳細解析だけ失敗した場合は
+  // 既存の /api/analyze + /api/capture-one へ自動フォールバックする。
+  try {
+    return await analyzeCouponLegacy(urlValue, env);
+  } catch (legacyError) {
+    const detailMessage = detail.data?.error || detail.data?.message || '';
+    if (legacyError instanceof HttpError) {
+      if (detailMessage && !/Not found|API|見つかりません/i.test(detailMessage)) {
+        throw new HttpError(legacyError.status, `${detailMessage} / ${legacyError.message}`);
+      }
+      throw legacyError;
+    }
+    throw new HttpError(502, detailMessage || 'クーポン解析に失敗しました。');
+  }
+}
+
 async function registerAutoCoupon(request, env) {
   const body = await readJson(request);
   const urlValue = normalizeUrl(String(body.url || '').trim());
@@ -228,28 +345,12 @@ async function registerAutoCoupon(request, env) {
       product: duplicate.name,
       redeemPlace: duplicate.redeem_place || '',
       expiresOn: duplicate.expires_on,
-      imageSaved: true
+      imageSaved: true,
+      analysisMode: 'duplicate'
     });
   }
 
-  const analyzerApi = String(env.COUPON_ANALYZER_API || DEFAULT_COUPON_ANALYZER_API).trim();
-  let analyzerResponse;
-  try {
-    analyzerResponse = await fetch(analyzerApi, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ url: urlValue })
-    });
-  } catch {
-    throw new HttpError(502, 'クーポン解析APIに接続できませんでした。');
-  }
-
-  let analyzed = {};
-  try { analyzed = await analyzerResponse.json(); } catch {}
-  if (!analyzerResponse.ok) {
-    throw new HttpError(analyzerResponse.status === 422 ? 422 : 502, analyzed.error || analyzed.message || 'クーポン解析に失敗しました。');
-  }
-
+  const analyzed = await analyzeCouponForImport(urlValue, env);
   const name = String(analyzed.product || '').trim();
   const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || '').trim();
   const expiresOn = String(analyzed.expiresOn || '').trim();
@@ -308,7 +409,8 @@ async function registerAutoCoupon(request, env) {
     product: name,
     redeemPlace,
     expiresOn,
-    imageSaved
+    imageSaved,
+    analysisMode: analyzed.analysisMode || 'detail'
   }, newCount ? 201 : 200);
 }
 
