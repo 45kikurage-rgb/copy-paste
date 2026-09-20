@@ -40,7 +40,6 @@ h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-w
 <script>
 (() => {
   'use strict';
-  const ANALYZER_API='https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
   const MANAGER_API=String(window.COUPON_API_BASE||'').replace(/\/$/,'');
   const status=document.getElementById('status');
   const spinner=document.getElementById('spinner');
@@ -83,40 +82,22 @@ h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-w
     if(!url){showResult(null,'共有されたURLを確認できませんでした。',true);return}
     if(!MANAGER_API){showResult(null,'自己利用分APIが設定されていません。',true);return}
     try{
-      status.textContent='商品名・引換先・期限・画像を解析しています...';
-      const analyzedResponse=await jsonFetch(ANALYZER_API,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({items:[{label:'1',url}]})
-      });
-      const analyzed=analyzedResponse.results?.[0];
-      if(!analyzed) throw new Error('解析結果を取得できませんでした。');
-      if(analyzed.status!=='ok') throw new Error(analyzed.message||'自動登録に必要な情報を読み取れませんでした。');
-      const redeemPlace=analyzed.merchant||analyzed.brand||'';
-      const imageDataUri=analyzed.imageBase64&&analyzed.imageMimeType
-        ? `data:${analyzed.imageMimeType};base64,${analyzed.imageBase64}`
-        : null;
-      product.textContent=analyzed.product;
-      place.textContent=redeemPlace;
-      expiry.textContent=analyzed.expiresOn.replace(/-/g,'/');
-      detail.hidden=false;
-      status.textContent='自己利用分へ登録しています...';
+      status.textContent='商品名・引換先・期限・画像を解析して登録しています...';
       const registered=await jsonFetch(`${MANAGER_API}/api/coupons/register-auto`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          name:analyzed.product,
-          redeemPlace,
-          expiresOn:analyzed.expiresOn,
-          url,
-          productImageDataUri:imageDataUri
-        })
+        body:JSON.stringify({url})
       });
+      const result={
+        product:registered.product||registered.name||'',
+        redeemPlace:registered.redeemPlace||'',
+        expiresOn:registered.expiresOn||''
+      };
       if(registered.newCount>0){
-        showResult({...analyzed,redeemPlace},'登録しました。');
+        showResult(result,'登録しました。');
         note.textContent=registered.imageSaved?'商品画像も保存しました。':'商品画像を取得できなかったため仮画像で登録しました。';
       }else{
-        showResult({...analyzed,redeemPlace},'このURLは登録済みです。');
+        showResult(result,'このURLは登録済みです。');
         note.textContent='同じURLは追加していません。';
       }
       setTimeout(()=>{ location.href='./coupons.html'; },1800);
