@@ -89,6 +89,19 @@
     couponList.appendChild(add);
   }
 
+  function displayCouponName(value) {
+    const name=String(value||'').replace(/\s+/g,' ').trim();
+
+    // 既存登録済みのセブン複数商品名も、一覧では短く読みやすく表示する。
+    const cafe=name.match(/^(セブンプレミアム\s+カフェラテ)\s+.+?(?:または|\s{2,}).*$/);
+    if(cafe) return `${cafe[1]} いずれか1本`;
+
+    return name
+      .replace(/\s*(?:または\s*)?運営元[:：].*$/,'')
+      .replace(/\s*(?:または\s*)?提供元[:：].*$/,'')
+      .replace(/\s*(?:または\s*)?発行元[:：].*$/,'');
+  }
+
   function createCouponCard(coupon) {
     const article = document.createElement('article');
     article.className = 'coupon-card';
@@ -103,7 +116,7 @@
     info.className = 'coupon-info';
     const title = document.createElement('h2');
     title.className = 'coupon-name';
-    title.textContent = coupon.name;
+    title.textContent = displayCouponName(coupon.name);
     const place = document.createElement('div');
     place.className = 'coupon-place';
     place.textContent = coupon.redeemPlace ? `引換先：${coupon.redeemPlace}` : '';
