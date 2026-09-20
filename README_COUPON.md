@@ -17,6 +17,7 @@ Binding名は大文字・小文字を含めて上記と完全に一致させて�
 | 名前 | 必須 | 設定値 |
 |---|---|---|
 | `ALLOWED_ORIGINS` | 必須 | `https://45kikurage-rgb.github.io` |
+| `COUPON_ANALYZER_API` | 任意 | `https://coupon-capture.45kikurage.workers.dev/api/analyze-detail`（未設定時もこの既定値を使用） |
 
 複数originを許可する場合はカンマ区切りにします。APIキーやSecretは不要で、ソースコードにも記載していません。
 
@@ -91,11 +92,13 @@ PWAのWeb Share Targetを使い、Androidの共有メニューからクーポン
 
 処理順:
 1. `share-coupon.html` が共有URLを受信
-2. `coupon-capture` Worker の `/api/analyze-detail` で商品名・引換先・利用期限・商品画像を解析
-3. `/api/coupons/register-auto` へ解析結果を送信
+2. 共有画面はURLだけを `/api/coupons/register-auto` へ送信
+3. 自己利用分Workerが `coupon-capture` Worker の `/api/analyze-detail` を呼び、商品名・引換先・利用期限・商品画像を解析
 4. 同じ商品名＋引換先は同じカードにまとめ、同じ期限ならその期限に1件追加
 5. 同じURLは fingerprint で重複登録しない
 6. 商品画像を取得できた場合はR2へ保存。取得できない場合は自動生成の仮画像を表示
+
+画面側はクーポン判定サイトを開きません。解析機能はWorker APIとして直接利用するため、判定用の画面サイトを削除してもAPIが残っていれば自動登録は継続できます。
 
 既存D1に `redeem_place` 列がない場合はWorkerが初回アクセス時に自動追加します。新規D1では `worker/schema.sql` に最初から含まれます。
 
