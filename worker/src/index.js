@@ -3,7 +3,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
 const DEFAULT_COUPON_ANALYZER_API = 'https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
 const DEFAULT_COUPON_ANALYZER_BASE = 'https://coupon-capture.45kikurage.workers.dev';
-const URL_RECONCILE_VERSION = '2026-09-21-v2';
+const URL_RECONCILE_VERSION = '2026-09-21-v3';
 
 export default {
   async fetch(request, env) {
@@ -891,24 +891,82 @@ function starbucksOgImage(html) {
   return b?.[1] ? decodeHtmlEntities(b[1]) : '';
 }
 
-async function fetchStarbucksCover(html, current) {
+function starbucksAmountCandidates(html, visibleText) {
+  const raw = decodeHtmlEntities(String(html || ''))
+    .replace(/\\u5186/gi, '円')
+    .replace(/\\u7a0e\\u8fbc/gi, '税込')
+    .replace(/\\u307e\\u3067/gi, 'まで')
+    .normalize('NFKC');
+  const text = String(visibleText || '').normalize('NFKC');
+  const haystack = text + '\n' + raw;
+  const values = [];
+
+  const add = (value, score, source) => {
+    const amount = Number(value);
+    if (!Number.isInteger(amount) || amount < 100 || amount > 5000) return;
+    if (amount >= 1900 && amount <= 2100) return; // 年を金額として拾わない
+    values.push({ amount, score, source });
+  };
+
+  for (const match of haystack.matchAll(/(?:税込(?:み)?\s*)?([1-9]\d{2,4})\s*円(?:\s*まで)?/gi)) {
+    add(match[1], 1000, 'yen-text');
+  }
+  for (const match of haystack.matchAll(/(?:DRINK\s*TICKET|ドリンク\s*チケット)[^0-9]{0,100}([1-9]\d{2,4})/gi)) {
+    add(match[1], 700, 'ticket-text');
+  }
+  for (const match of raw.matchAll(/(?:ticketValue|faceValue|amount|price|upperLimit|limit)[^0-9]{0,40}([1-9]\d{2,4})/gi)) {
+    add(match[1], 600, 'data-field');
+  }
+
+  for (const item of htmlImageDescriptors(html)) {
+    const label = (item.source + ' ' + item.alt).normalize('NFKC');
+    if (!/ticket|gift|drink|egift|スターバックス/i.test(label)) continue;
+    for (const match of label.matchAll(/(?:^|[^0-9])([1-9]\d{2,4})(?:[^0-9]|$)/g)) {
+      add(match[1], 450, 'image-label');
+    }
+  }
+
+  return values.sort((a, b) => b.score - a.score || a.amount - b.amount);
+}
+
+async function fetchStarbucksCover(html, current, amount) {
   const sources = [];
   const ogImage = starbucksOgImage(html);
-  if (ogImage) sources.push({ source: ogImage, og: true });
+  if (ogImage) sources.push({ source: ogImage, og: true, label: ogImage });
+
   for (const item of htmlImageDescriptors(html)) {
-    const label = item.source + ' ' + item.alt;
-    if (/logo|icon|arrow|qr|barcode/i.test(label)) continue;
-    if (/ticket|gift|drink|500|700|starbucks|スターバックス/i.test(label)) sources.push({ source: item.source, og: false });
+    sources.push({ source: item.source, og: false, label: item.source + ' ' + item.alt });
   }
+
   const seen = new Set();
+  const candidates = [];
+
   for (const entry of sources) {
     let url;
     try { url = new URL(entry.source, current); } catch { continue; }
     if (url.protocol !== 'https:' || seen.has(url.href)) continue;
     seen.add(url.href);
-    if (!/(^|\.)starbucks\.co\.jp$/i.test(url.hostname) && !entry.og) continue;
+
+    const label = String(entry.label || '').normalize('NFKC');
+    const officialHost = /(^|\.)starbucks\.co\.jp$/i.test(url.hostname);
+    if (!officialHost && !entry.og) continue;
+
+    let score = entry.og ? 100 : 0;
+    if (/ticket|gift|drink|egift/i.test(label)) score += 1200;
+    if (amount && new RegExp('(?:^|[^0-9])' + amount + '(?:[^0-9]|$)').test(label)) score += 1400;
+    if (/card|coupon/i.test(label)) score += 400;
+    if (/logo|icon|arrow|qr|barcode|brandmark/i.test(label)) score -= 3000;
+    if (/starbucks/i.test(label) && !/ticket|gift|drink|egift/i.test(label)) score -= 250;
+
+    candidates.push({ url, score });
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+
+  let best = null;
+  for (const candidate of candidates.slice(0, 10)) {
     try {
-      const response = await fetch(url, {
+      const response = await fetch(candidate.url, {
         headers: {
           'Accept': 'image/png,image/jpeg,image/webp,image/*',
           'Referer': current.toString(),
@@ -918,32 +976,45 @@ async function fetchStarbucksCover(html, current) {
       if (!response.ok) continue;
       const contentType = (response.headers.get('content-type') || '').split(';', 1)[0].toLowerCase().replace('image/jpg', 'image/jpeg');
       if (!/^image\/(?:png|jpeg|webp)$/.test(contentType)) continue;
+
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) continue;
-      let binary = '';
-      for (let i = 0; i < bytes.length; i += 32768) binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
-      return 'data:' + contentType + ';base64,' + btoa(binary);
+
+      // ロゴのような小画像より、券面の大きい画像を優先する。
+      const weighted = candidate.score + Math.min(bytes.length, 2500000) / 600;
+      if (!best || weighted > best.weighted) best = { bytes, contentType, weighted };
     } catch {}
   }
-  return null;
+
+  if (!best) return null;
+
+  let binary = '';
+  for (let i = 0; i < best.bytes.length; i += 32768) {
+    binary += String.fromCharCode(...best.bytes.subarray(i, i + 32768));
+  }
+  return 'data:' + best.contentType + ';base64,' + btoa(binary);
 }
 
 async function analyzeStarbucksDirectForImport(urlValue) {
   const parsed = new URL(urlValue);
   if (parsed.hostname !== 'gift.starbucks.co.jp' || !/^\/e\/[A-Za-z0-9_-]+\/?$/.test(parsed.pathname)) return null;
+
   const page = await fetchStarbucksDirectPage(urlValue);
   const text = htmlVisibleLines(page.html).join('\n').normalize('NFKC');
-  const amountMatch = text.match(/(?:税込\s*)?(\d{3,5})\s*円(?:まで)?/i) || text.match(/(?:DRINK\s*TICKET|eGift)[\s\S]{0,160}?(\d{3,5})/i);
-  const amount = Number(amountMatch?.[1] || 0);
+  const candidates = starbucksAmountCandidates(page.html, text);
+  const amount = Number(candidates[0]?.amount || 0);
+
   if (!amount) throw new HttpError(422, 'スターバックスeGiftの金額を読み取れませんでした。');
-  const expiresOn = extractLatestIsoDate(text);
+
+  const expiresOn = extractLatestIsoDate(text + '\n' + decodeHtmlEntities(page.html));
   if (!expiresOn) throw new HttpError(422, 'スターバックスeGiftの有効期限を読み取れませんでした。');
+
   return {
     product: 'スタバ' + amount,
     redeemPlace: 'スターバックス',
     merchant: 'スターバックス',
     expiresOn,
-    productImageDataUri: await fetchStarbucksCover(page.html, page.current),
+    productImageDataUri: await fetchStarbucksCover(page.html, page.current, amount),
     site: 'starbucks',
     status: 'ok',
     analysisMode: 'direct-starbucks'
