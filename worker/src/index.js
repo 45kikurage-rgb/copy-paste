@@ -389,6 +389,37 @@ function htmlImageDescriptors(html) {
   });
 }
 
+function compactSevenProductNames(names) {
+  const clean = names
+    .map(value => String(value || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (!clean.length) return '';
+  if (clean.length === 1) return clean[0];
+
+  const tokenized = clean.map(value => value.split(/\s+/));
+  const prefix = [];
+  for (let index = 0; ; index += 1) {
+    const token = tokenized[0][index];
+    if (!token || tokenized.some(tokens => tokens[index] !== token)) break;
+    prefix.push(token);
+  }
+
+  const common = prefix.join(' ').trim();
+  if (common.length >= 6) {
+    const combined = clean.join(' ');
+    const unit = /\b(?:ml|mL|L)\b|\d+\s*(?:ml|mL|L)/.test(combined) ? '1本'
+      : /\d+\s*本/.test(combined) ? '1本'
+      : /\d+\s*個/.test(combined) ? '1個'
+      : '1点';
+    return `${common} いずれか${unit}`;
+  }
+
+  const unit = clean.some(value => /\d+\s*個/.test(value)) ? '1個'
+    : clean.some(value => /\b(?:ml|mL|L)\b|\d+\s*本/.test(value)) ? '1本'
+    : '1点';
+  return `${clean.join(' または ')} いずれか${unit}`;
+}
+
 function pickSevenFoodProduct(lines, descriptors) {
   const generic = /^(?:引換クーポン|クーポン|対象商品|商品画像|画像|バーコード|ロゴ|ご注意|クーポンの利用期間|セブン[‐ー・\- ]?イレブン店舗で引換えられます)$/;
   const descriptor = descriptors
@@ -410,12 +441,11 @@ function pickSevenFoodProduct(lines, descriptors) {
     const names = [];
     for (const line of lines.slice(targetIndex + 1, targetIndex + 7)) {
       const clean = line.replace(/^[・●■※\s]+/, '').trim();
-      if (!clean || /対象外|ご注意|利用期間|クーポン|地域により|画像はイメージ/.test(clean)) break;
-      if (clean.length <= 40) names.push(clean);
-      if (names.length >= 3) break;
+      if (!clean || /対象外|ご注意|利用期間|クーポン|地域により|画像はイメージ|運営元|提供元|発行元/.test(clean)) break;
+      if (clean.length <= 70) names.push(clean);
+      if (names.length >= 4) break;
     }
-    if (names.length === 1) return names[0];
-    if (names.length > 1) return `${names.join(' または ')} いずれか1個`;
+    if (names.length) return compactSevenProductNames(names);
   }
 
   const candidates = lines
