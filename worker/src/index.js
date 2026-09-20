@@ -601,7 +601,23 @@ async function registerAutoCoupon(request, env) {
     });
   }
 
-  const analyzed = await analyzeCouponForImport(urlValue, env);
+  const suppliedName = String(body.name || body.product || '').trim();
+  const suppliedPlace = String(body.redeemPlace || body.merchant || '').trim();
+  const suppliedExpiry = String(body.expiresOn || '').trim();
+  const hasSuppliedAnalysis = suppliedName && suppliedPlace && /^\d{4}-\d{2}-\d{2}$/.test(suppliedExpiry);
+
+  const analyzed = hasSuppliedAnalysis
+    ? {
+        product: suppliedName,
+        redeemPlace: suppliedPlace,
+        merchant: suppliedPlace,
+        expiresOn: suppliedExpiry,
+        productImageDataUri: body.productImageDataUri || null,
+        status: 'ok',
+        analysisMode: 'client-fallback'
+      }
+    : await analyzeCouponForImport(urlValue, env);
+
   const name = String(analyzed.product || '').trim();
   const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || '').trim();
   const expiresOn = String(analyzed.expiresOn || '').trim();
