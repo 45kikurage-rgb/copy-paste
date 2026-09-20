@@ -3,7 +3,6 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
 const DEFAULT_COUPON_ANALYZER_API = 'https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
 const DEFAULT_COUPON_ANALYZER_BASE = 'https://coupon-capture.45kikurage.workers.dev';
-let couponMaintenancePromise = null;
 
 export default {
   async fetch(request, env) {
@@ -98,13 +97,9 @@ function canonicalCouponNameForStorage(name, redeemPlace = '') {
 }
 
 async function ensureCouponMaintenance(env) {
-  if (!couponMaintenancePromise) {
-    couponMaintenancePromise = mergeCanonicalCouponGroups(env).catch(error => {
-      couponMaintenancePromise = null;
-      throw error;
-    });
-  }
-  return couponMaintenancePromise;
+  // 件数が少ない自己利用分では、毎回軽く整合性を確認する。
+  // これにより、登録直後にできた旧名称/新名称の重複カードも次回表示で自動統合される。
+  return mergeCanonicalCouponGroups(env);
 }
 
 async function mergeCanonicalCouponGroups(env) {
@@ -276,7 +271,7 @@ async function listCoupons(request, env) {
     if (!map.has(row.id)) {
       map.set(row.id, {
         id: row.id,
-        name: row.name,
+        name: canonicalCouponNameForStorage(row.name, row.redeem_place || ''),
         redeemPlace: row.redeem_place || '',
         type: row.coupon_type,
         coverUrl: `${new URL(request.url).origin}/api/coupons/${encodeURIComponent(row.id)}/cover?v=${encodeURIComponent(row.cover_object_key || '')}`,
@@ -779,15 +774,42 @@ async function registerAutoCoupon(request, env) {
 
   const now = nowSeconds();
   const nameKey = normalizeName(`${name}\u0000${redeemPlace}`);
-  const proposedCouponId = crypto.randomUUID();
-  await env.COUPON_DB.prepare(`
-    INSERT OR IGNORE INTO coupons (id, name, name_key, coupon_type, redeem_place, created_at, updated_at)
-    VALUES (?, ?, ?, 'url', ?, ?, ?)
-  `).bind(proposedCouponId, name, nameKey, redeemPlace, now, now).run();
 
-  const coupon = await env.COUPON_DB.prepare(
-    'SELECT id, cover_object_key FROM coupons WHERE name_key = ? AND coupon_type = ?'
-  ).bind(nameKey, 'url').first();
+  const existingCards = await env.COUPON_DB.prepare(`
+    SELECT id, name, name_key, cover_object_key
+    FROM coupons
+    WHERE coupon_type = 'url' AND redeem_place = ?
+    ORDER BY created_at ASC, id ASC
+  `).bind(redeemPlace).all();
+
+  let coupon = (existingCards.results || []).find(row => {
+    const canonical = canonicalCouponNameForStorage(row.name, redeemPlace);
+    return normalizeName(`${canonical}\u0000${redeemPlace}`) === nameKey;
+  }) || null;
+
+  if (!coupon) {
+    const proposedCouponId = crypto.randomUUID();
+    await env.COUPON_DB.prepare(`
+      INSERT OR IGNORE INTO coupons (id, name, name_key, coupon_type, redeem_place, created_at, updated_at)
+      VALUES (?, ?, ?, 'url', ?, ?, ?)
+    `).bind(proposedCouponId, name, nameKey, redeemPlace, now, now).run();
+
+    coupon = await env.COUPON_DB.prepare(
+      'SELECT id, name, name_key, cover_object_key FROM coupons WHERE name_key = ? AND coupon_type = ?'
+    ).bind(nameKey, 'url').first();
+  } else if (coupon.name !== name || coupon.name_key !== nameKey) {
+    // 同義の旧カードを見つけた場合は、新しいカードを作らずそのカードを正規名へ寄せる。
+    // 同じ正規キーの別カードが残っている場合は、直後のmaintenanceで安全に統合される。
+    const conflict = await env.COUPON_DB.prepare(
+      'SELECT id FROM coupons WHERE name_key = ? AND coupon_type = ? AND id <> ? LIMIT 1'
+    ).bind(nameKey, 'url', coupon.id).first();
+    if (!conflict) {
+      await env.COUPON_DB.prepare('UPDATE coupons SET name = ?, name_key = ?, updated_at = ? WHERE id = ?')
+        .bind(name, nameKey, now, coupon.id).run();
+      coupon = { ...coupon, name, name_key: nameKey };
+    }
+  }
+
   if (!coupon) throw new HttpError(500, 'クーポンを作成できませんでした。');
 
   const proposedExpiryId = crypto.randomUUID();
@@ -819,6 +841,8 @@ async function registerAutoCoupon(request, env) {
   `).bind(crypto.randomUUID(), expiry.id, urlValue, fingerprint, now).run();
 
   const newCount = Number(result.meta?.changes || 0);
+  await mergeCanonicalCouponGroups(env);
+
   return json(request, env, {
     newCount,
     duplicateCount: newCount ? 0 : 1,
