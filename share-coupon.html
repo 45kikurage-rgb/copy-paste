@@ -120,7 +120,33 @@ h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-w
     const generic=[...String(svg||'').matchAll(/<image\b[^>]*href="(data:image\/(?:png|jpeg|webp);base64,[^"]+)"[^>]*>/gi)];
     return generic[0]?.[1]||null;
   }
+  function productTitleFromSvg(svg){
+    const rows=[...String(svg||'').matchAll(/<text\b[^>]*y="(9\d{2}|10\d{2})"[^>]*>([^<]+)<\/text>/gi)]
+      .map(m=>({y:Number(m[1]),value:m[2].replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").trim()}))
+      .filter(x=>x.value)
+      .sort((a,b)=>a.y-b.y);
+    return rows.map(x=>x.value).join(' ').trim();
+  }
   async function analyzeLegacy(url){
+    let captured=null;
+    try{
+      captured=await jsonFetch(`${ANALYZER_BASE}/api/capture-one`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({url,mode:'fast'})
+      });
+      const svg=captured.base64?decodeBase64Text(captured.base64):'';
+      const product=(captured.product||captured.title||productTitleFromSvg(svg)||'').trim();
+      const expiresOn=extractExpiry(Array.isArray(captured.period)?captured.period.join('\n'):svg);
+      if(product&&product!=='商品名不明'&&expiresOn){
+        return{
+          product,
+          redeemPlace:placeForSite(captured.site),
+          expiresOn,
+          productImageDataUri:captured.productImageDataUri||productImageFromSvg(svg)
+        };
+      }
+    }catch{}
+
     const analyzed=await jsonFetch(`${ANALYZER_BASE}/api/analyze`,{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({items:[{label:'1',url}]})
@@ -130,19 +156,14 @@ h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-w
     if(item.status==='used')throw new Error('このクーポンは利用済みです。');
     if(item.status!=='ok'||!item.product||item.product==='商品名不明')throw new Error(item.message||'商品名を読み取れませんでした。');
 
-    const captured=await jsonFetch(`${ANALYZER_BASE}/api/capture-one`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({url,mode:'fast'})
-    });
-    if(!captured.base64)throw new Error('利用期限を読み取れませんでした。');
-    const svg=decodeBase64Text(captured.base64);
+    const svg=captured?.base64?decodeBase64Text(captured.base64):'';
     const expiresOn=extractExpiry(svg);
     if(!expiresOn)throw new Error('利用期限を読み取れませんでした。');
     return{
       product:item.product,
       redeemPlace:placeForSite(item.site,item.brand),
       expiresOn,
-      productImageDataUri:productImageFromSvg(svg)
+      productImageDataUri:captured?.productImageDataUri||productImageFromSvg(svg)
     };
   }
 
