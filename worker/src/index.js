@@ -1,6 +1,7 @@
 const RESERVATION_SECONDS = 10 * 60;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
+const DEFAULT_COUPON_ANALYZER_API = 'https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
 
 export default {
   async fetch(request, env) {
@@ -208,21 +209,55 @@ function decodeImageDataUri(value) {
 
 async function registerAutoCoupon(request, env) {
   const body = await readJson(request);
-  const name = String(body.name || '').trim();
-  const redeemPlace = String(body.redeemPlace || '').trim();
-  const expiresOn = String(body.expiresOn || '').trim();
   const urlValue = normalizeUrl(String(body.url || '').trim());
-
-  if (!name || name.length > 100) throw new HttpError(400, '商品名を確認できません。');
-  if (!redeemPlace || redeemPlace.length > 60) throw new HttpError(400, '引換先を確認できません。');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(400, '利用期限を確認できません。');
-  if (expiresOn < todayInTokyo()) throw new HttpError(400, '期限切れのクーポンは登録できません。');
-
   const fingerprint = await sha256Text(urlValue);
-  const existing = await existingFingerprints(env, [fingerprint]);
-  if (existing.has(fingerprint)) {
-    return json(request, env, { newCount: 0, duplicateCount: 1, name, redeemPlace, expiresOn });
+
+  const duplicate = await env.COUPON_DB.prepare(`
+    SELECT c.name, c.redeem_place, e.expires_on
+    FROM coupon_items i
+    JOIN coupon_expiries e ON e.id = i.expiry_id
+    JOIN coupons c ON c.id = e.coupon_id
+    WHERE i.fingerprint = ?
+    LIMIT 1
+  `).bind(fingerprint).first();
+  if (duplicate) {
+    return json(request, env, {
+      newCount: 0,
+      duplicateCount: 1,
+      name: duplicate.name,
+      product: duplicate.name,
+      redeemPlace: duplicate.redeem_place || '',
+      expiresOn: duplicate.expires_on,
+      imageSaved: true
+    });
   }
+
+  const analyzerApi = String(env.COUPON_ANALYZER_API || DEFAULT_COUPON_ANALYZER_API).trim();
+  let analyzerResponse;
+  try {
+    analyzerResponse = await fetch(analyzerApi, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ url: urlValue })
+    });
+  } catch {
+    throw new HttpError(502, 'クーポン解析APIに接続できませんでした。');
+  }
+
+  let analyzed = {};
+  try { analyzed = await analyzerResponse.json(); } catch {}
+  if (!analyzerResponse.ok) {
+    throw new HttpError(analyzerResponse.status === 422 ? 422 : 502, analyzed.error || analyzed.message || 'クーポン解析に失敗しました。');
+  }
+
+  const name = String(analyzed.product || '').trim();
+  const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || '').trim();
+  const expiresOn = String(analyzed.expiresOn || '').trim();
+
+  if (!name || name === '商品名不明' || name.length > 100) throw new HttpError(422, '商品名を確認できません。');
+  if (!redeemPlace || redeemPlace.length > 60) throw new HttpError(422, '引換先を確認できません。');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(422, '利用期限を確認できません。');
+  if (expiresOn < todayInTokyo()) throw new HttpError(422, '期限切れのクーポンは登録できません。');
 
   const now = nowSeconds();
   const nameKey = normalizeName(`${name}\u0000${redeemPlace}`);
@@ -247,8 +282,8 @@ async function registerAutoCoupon(request, env) {
   if (!expiry) throw new HttpError(500, '利用期限を保存できませんでした。');
 
   let imageSaved = Boolean(coupon.cover_object_key);
-  if (!coupon.cover_object_key && body.productImageDataUri) {
-    const image = decodeImageDataUri(body.productImageDataUri);
+  if (!coupon.cover_object_key && analyzed.productImageDataUri) {
+    const image = decodeImageDataUri(analyzed.productImageDataUri);
     if (image) {
       const imageHash = await sha256Buffer(image.bytes);
       const coverKey = `covers/${coupon.id}/auto-${imageHash}.${extensionFor(image.mimeType)}`;
@@ -270,10 +305,11 @@ async function registerAutoCoupon(request, env) {
     newCount,
     duplicateCount: newCount ? 0 : 1,
     name,
+    product: name,
     redeemPlace,
     expiresOn,
     imageSaved
-  });
+  }, newCount ? 201 : 200);
 }
 
 async function registerCoupon(request, env) {
