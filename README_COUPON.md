@@ -83,3 +83,20 @@ Cloudflare設定後は、次の順で実機確認してください。
 - 1回の登録上限は100件、画像1枚の上限は10MBです。
 - 利用用画像は公開URLを持ちません。正しい予約IDと端末内に保存した予約トークンがある間だけZIP取得できます。
 - 予約トークンはブラウザのlocalStorageに保存し、確認・キャンセル・10分経過で削除します。
+
+
+## 共有からの自動登録
+
+PWAのWeb Share Targetを使い、Androidの共有メニューからクーポンURLを受信できます。
+
+処理順:
+1. `share-coupon.html` が共有URLを受信
+2. `coupon-capture` Worker の `/api/analyze-detail` で商品名・引換先・利用期限・商品画像を解析
+3. `/api/coupons/register-auto` へ解析結果を送信
+4. 同じ商品名＋引換先は同じカードにまとめ、同じ期限ならその期限に1件追加
+5. 同じURLは fingerprint で重複登録しない
+6. 商品画像を取得できた場合はR2へ保存。取得できない場合は自動生成の仮画像を表示
+
+既存D1に `redeem_place` 列がない場合はWorkerが初回アクセス時に自動追加します。新規D1では `worker/schema.sql` に最初から含まれます。
+
+現時点ではHTTP/API解析を優先し、Browser Renderingは使用していません。取得できないクーポンが出た場合のみフォールバック追加を検討します。
