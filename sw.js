@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v15-coupon-food';
+const CACHE='url-format-shisa-v17-coupon-merge';
 const CORE=[
   './',
   './index.html',
