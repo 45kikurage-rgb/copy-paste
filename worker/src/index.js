@@ -3,7 +3,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
 const DEFAULT_COUPON_ANALYZER_API = 'https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
 const DEFAULT_COUPON_ANALYZER_BASE = 'https://coupon-capture.45kikurage.workers.dev';
-const URL_RECONCILE_VERSION = '2026-09-21-v5';
+const URL_RECONCILE_VERSION = '2026-09-21-v6';
 
 export default {
   async fetch(request, env) {
@@ -115,6 +115,11 @@ function canonicalCouponNameForStorage(name, redeemPlace = '') {
     const amount = value.normalize('NFKC').match(/(?:税込\s*)?(\d{3,5})\s*円|(?:コメダ(?:コーヒー)?|KOMEDA)\s*(\d{3,5})/i);
     const yen = Number(amount?.[1] || amount?.[2] || 0);
     if (yen > 0) return yen + '円 コメダコーヒー';
+  }
+  if (/ミスタードーナツ|ミスド|MISTER\s*DONUT/i.test(value)) {
+    const amount = value.normalize('NFKC').match(/(?:税込\s*)?(\d{3,5})\s*円|(?:ミスタードーナツ|ミスド)\s*(\d{3,5})/i);
+    const yen = Number(amount?.[1] || amount?.[2] || 0);
+    if (yen > 0) return yen + '円 ミスタードーナツ';
   }
   if (/ローソン|LAWSON/i.test(value)) {
     const amount = value.normalize('NFKC').match(/(?:税込\s*)?(\d{3,5})\s*円/);
@@ -298,6 +303,7 @@ async function countPendingUrlReconcile(env) {
         OR i.url_value LIKE 'https://gift.starbucks.co.jp/%'
         OR i.url_value LIKE 'https://komeda.e-gift.co/%'
         OR i.url_value LIKE 'https://lawson-i.e-gift.co/%'
+        OR i.url_value LIKE 'https://misterdonut.e-gift.co/%'
       )
       AND s.coupon_id IS NULL
   `).bind(URL_RECONCILE_VERSION).first();
@@ -373,6 +379,7 @@ async function reconcileExistingUrlCoupons(request, env) {
         OR i.url_value LIKE 'https://gift.starbucks.co.jp/%'
         OR i.url_value LIKE 'https://komeda.e-gift.co/%'
         OR i.url_value LIKE 'https://lawson-i.e-gift.co/%'
+        OR i.url_value LIKE 'https://misterdonut.e-gift.co/%'
       )
       AND s.coupon_id IS NULL
     GROUP BY c.id
@@ -1298,6 +1305,141 @@ async function analyzeLawsonDirectForImport(urlValue) {
   };
 }
 
+async function fetchMisterDonutDirectPage(urlValue) {
+  const original = new URL(urlValue);
+  let current = new URL(original.origin + original.pathname);
+  for (let redirect = 0; redirect <= 4; redirect += 1) {
+    if (current.protocol !== 'https:' || current.hostname !== 'misterdonut.e-gift.co' || !/^\/c\/[A-Za-z0-9_-]{6,200}\/\d{1,8}\/?$/.test(current.pathname)) {
+      throw new HttpError(422, 'ミスタードーナツ公式eGift以外へ転送されたため停止しました。');
+    }
+    let response;
+    try {
+      response = await fetch(current, {
+        redirect: 'manual',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'ja,en;q=0.8',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36'
+        }
+      });
+    } catch {
+      throw new HttpError(502, 'ミスタードーナツeGiftページに接続できませんでした。');
+    }
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) throw new HttpError(422, 'ミスタードーナツeGiftの転送先を確認できませんでした。');
+      current = new URL(location, current);
+      continue;
+    }
+    if (!response.ok) throw new HttpError(502, 'ミスタードーナツeGiftのページ取得エラー（' + response.status + '）');
+    return { html: await readResponseText(response, 2500000), current };
+  }
+  throw new HttpError(422, 'ミスタードーナツeGiftの転送回数が多すぎます。');
+}
+
+function misterDonutProductFromPage(html, text) {
+  const ogTitle = genericOgValue(html, 'og:title');
+  const titleTag = String(html || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
+  let title = cleanEgiftTitle(ogTitle || titleTag, /ミスタードーナツ|ミスド|MISTER\s*DONUT/i)
+    .replace(/^ミスタードーナツ\s*/i, '')
+    .replace(/\s*ミスタードーナツ$/i, '')
+    .trim();
+
+  const haystack = (String(text || '') + '\n' + decodeHtmlEntities(String(html || ''))).normalize('NFKC');
+  const amounts = [];
+  for (const match of haystack.matchAll(/(?:税込\s*)?([1-9]\d{2,4})\s*円/g)) {
+    const amount = Number(match[1]);
+    if (amount >= 100 && amount <= 10000 && !(amount >= 1900 && amount <= 2100)) amounts.push(amount);
+  }
+  const amount = amounts[0] || Number(title.match(/([1-9]\d{2,4})\s*円/)?.[1] || 0);
+
+  if (amount && /ギフトチケット|お買物券|お買い物券|ギフト券|デジタルギフト|チケット/i.test(title || haystack)) {
+    return { product: amount + '円 ミスタードーナツ', amount };
+  }
+
+  if (!title || /^(?:eGift|ギフト|ミスタードーナツ)$/i.test(title)) {
+    return { product: amount ? amount + '円 ミスタードーナツ' : 'ミスタードーナツ eGift', amount };
+  }
+
+  return { product: title, amount };
+}
+
+async function fetchMisterDonutCover(html, current, amount) {
+  const sources = [];
+  const ogImage = genericOgValue(html, 'og:image');
+  if (ogImage) sources.push({ source: ogImage, score: 1000, og: true });
+
+  for (const item of htmlImageDescriptors(html)) {
+    const label = (item.source + ' ' + item.alt).normalize('NFKC');
+    let score = 0;
+    if (/gift|ticket|coupon|donut|ミスタードーナツ|ミスド/i.test(label)) score += 900;
+    if (amount && new RegExp('(?:^|[^0-9])' + amount + '(?:[^0-9]|$)').test(label)) score += 1100;
+    if (/main|visual|image|card/i.test(label)) score += 250;
+    if (/logo|icon|arrow|qr|barcode|brandmark/i.test(label)) score -= 2800;
+    if (score > 0) sources.push({ source: item.source, score, og: false });
+  }
+
+  sources.sort((a,b)=>b.score-a.score);
+  const seen = new Set();
+  let best = null;
+
+  for (const entry of sources.slice(0,12)) {
+    let url;
+    try { url = new URL(entry.source, current); } catch { continue; }
+    if (url.protocol !== 'https:' || seen.has(url.href)) continue;
+    seen.add(url.href);
+
+    if (!/(^|\.)e-gift\.co$/i.test(url.hostname) && url.hostname !== 'misterdonut.e-gift.co' && !entry.og) continue;
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Accept': 'image/png,image/jpeg,image/webp,image/*',
+          'Referer': current.toString(),
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36'
+        }
+      });
+      if (!response.ok) continue;
+      const contentType = (response.headers.get('content-type') || '').split(';',1)[0].toLowerCase().replace('image/jpg','image/jpeg');
+      if (!/^image\/(?:png|jpeg|webp)$/.test(contentType)) continue;
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) continue;
+
+      const weighted = entry.score + Math.min(bytes.length,2500000)/650;
+      if (!best || weighted > best.weighted) best = { bytes, contentType, weighted };
+    } catch {}
+  }
+
+  if (!best) return null;
+  let binary='';
+  for(let i=0;i<best.bytes.length;i+=32768) binary += String.fromCharCode(...best.bytes.subarray(i,i+32768));
+  return 'data:' + best.contentType + ';base64,' + btoa(binary);
+}
+
+async function analyzeMisterDonutDirectForImport(urlValue) {
+  const parsed = new URL(urlValue);
+  if (parsed.hostname !== 'misterdonut.e-gift.co' || !/^\/c\/[A-Za-z0-9_-]{6,200}\/\d{1,8}\/?$/.test(parsed.pathname)) return null;
+
+  const page = await fetchMisterDonutDirectPage(urlValue);
+  const text = htmlVisibleLines(page.html).join('\n').normalize('NFKC');
+  const item = misterDonutProductFromPage(page.html, text);
+  const expiresOn = extractLatestIsoDate(text + '\n' + decodeHtmlEntities(page.html));
+
+  if (!item.product) throw new HttpError(422, 'ミスタードーナツeGiftの商品名を読み取れませんでした。');
+  if (!expiresOn) throw new HttpError(422, 'ミスタードーナツeGiftの有効期限を読み取れませんでした。');
+
+  return {
+    product: item.product,
+    redeemPlace: 'ミスタードーナツ',
+    merchant: 'ミスタードーナツ',
+    expiresOn,
+    productImageDataUri: await fetchMisterDonutCover(page.html, page.current, item.amount),
+    site: 'misterdonut',
+    status: 'ok',
+    analysisMode: 'direct-misterdonut'
+  };
+}
+
 async function analyzeCouponForImport(urlValue, env) {
   const directSeven = await analyzeSevenDirectForImport(urlValue);
   if (directSeven) return directSeven;
@@ -1310,6 +1452,9 @@ async function analyzeCouponForImport(urlValue, env) {
 
   const directLawson = await analyzeLawsonDirectForImport(urlValue);
   if (directLawson) return directLawson;
+
+  const directMisterDonut = await analyzeMisterDonutDirectForImport(urlValue);
+  if (directMisterDonut) return directMisterDonut;
 
   const detailApi = String(env.COUPON_ANALYZER_API || DEFAULT_COUPON_ANALYZER_API).trim();
   const detail = await fetchAnalyzerJson(detailApi, { url: urlValue });
