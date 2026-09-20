@@ -299,8 +299,40 @@ function extractProductImageFromSvg(svg) {
   return generic[0]?.[1] || null;
 }
 
+function extractCouponTitleFromSvg(svg) {
+  const text = String(svg || '');
+  const matches = [...text.matchAll(/<text\b[^>]*y="(9\d{2}|10\d{2})"[^>]*>([^<]+)<\/text>/gi)]
+    .map(match => ({ y: Number(match[1]), value: match[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").trim() }))
+    .filter(item => item.value);
+  return matches.sort((a,b)=>a.y-b.y).map(item=>item.value).join(' ').trim();
+}
+
 async function analyzeCouponLegacy(urlValue, env) {
   const base = analyzerBaseFromEnv(env);
+
+  // 食品クーポンは容量表記が無いことがあるため、まずcapture-oneのタイトル/期間から判定する。
+  const capture = await fetchAnalyzerJson(`${base}/api/capture-one`, { url: urlValue, mode: 'fast' });
+  if (capture.ok && capture.data) {
+    const svg = capture.data.base64 ? decodeBase64Text(capture.data.base64) : '';
+    const product = String(capture.data.product || capture.data.title || extractCouponTitleFromSvg(svg)).trim();
+    const expiresOn = extractLatestIsoDate(
+      Array.isArray(capture.data.period) ? capture.data.period.join('\n') : svg
+    );
+    if (product && product !== '商品名不明' && expiresOn) {
+      return {
+        product,
+        redeemPlace: redeemPlaceForSite(capture.data.site),
+        merchant: redeemPlaceForSite(capture.data.site),
+        expiresOn,
+        productImageDataUri: capture.data.productImageDataUri || extractProductImageFromSvg(svg),
+        site: capture.data.site,
+        status: 'ok',
+        analysisMode: 'capture-fallback'
+      };
+    }
+  }
+
+  // capture-oneで取れないケースのみ従来の分析APIへ。
   const analysis = await fetchAnalyzerJson(`${base}/api/analyze`, { items: [{ label: '1', url: urlValue }] });
   if (!analysis.ok) {
     throw new HttpError(502, analysis.data.error || analysis.data.message || '既存のクーポン解析APIでも解析できませんでした。');
@@ -312,11 +344,7 @@ async function analyzeCouponLegacy(urlValue, env) {
     throw new HttpError(422, item.message || '商品名を読み取れませんでした。');
   }
 
-  const capture = await fetchAnalyzerJson(`${base}/api/capture-one`, { url: urlValue, mode: 'fast' });
-  if (!capture.ok || !capture.data.base64) {
-    throw new HttpError(422, capture.data.error || '利用期限・商品画像を読み取れませんでした。');
-  }
-  const svg = decodeBase64Text(capture.data.base64);
+  const svg = capture.data?.base64 ? decodeBase64Text(capture.data.base64) : '';
   const expiresOn = extractLatestIsoDate(svg);
   if (!expiresOn) throw new HttpError(422, '利用期限を読み取れませんでした。');
 
@@ -325,7 +353,7 @@ async function analyzeCouponLegacy(urlValue, env) {
     redeemPlace: redeemPlaceForSite(item.site, item.brand),
     merchant: redeemPlaceForSite(item.site, item.brand),
     expiresOn,
-    productImageDataUri: extractProductImageFromSvg(svg),
+    productImageDataUri: capture.data?.productImageDataUri || extractProductImageFromSvg(svg),
     site: item.site,
     status: 'ok',
     analysisMode: 'legacy-fallback'
