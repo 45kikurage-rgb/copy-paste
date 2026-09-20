@@ -61,3 +61,12 @@ CREATE INDEX IF NOT EXISTS idx_coupon_items_available
 
 CREATE INDEX IF NOT EXISTS idx_reservations_expiry
   ON reservations(status, expires_at);
+
+CREATE TABLE IF NOT EXISTS coupon_url_reconcile (
+  coupon_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  status TEXT NOT NULL,
+  message TEXT,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (coupon_id, version)
+);
