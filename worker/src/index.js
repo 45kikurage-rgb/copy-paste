@@ -26,7 +26,10 @@ export default {
       if (request.method === 'POST' && path === '/api/coupons/register') return await registerCoupon(request, env);
       if (request.method === 'POST' && path === '/api/coupons/register-auto') return await registerAutoCoupon(request, env);
 
-      let match = path.match(/^\/api\/coupons\/([^/]+)\/cover$/);
+      let match = path.match(/^\/api\/coupons\/([^/]+)$/);
+      if (request.method === 'DELETE' && match) return await deleteCoupon(request, env, decodeURIComponent(match[1]));
+
+      match = path.match(/^\/api\/coupons\/([^/]+)\/cover$/);
       if (request.method === 'GET' && match) return await getCover(request, env, decodeURIComponent(match[1]));
 
       match = path.match(/^\/api\/coupons\/([^/]+)\/reserve$/);
@@ -223,7 +226,7 @@ function corsResponse(request, env, response) {
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Vary', 'Origin');
     headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Reservation-Token');
-    headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    headers.set('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   }
   headers.set('X-Content-Type-Options', 'nosniff');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
@@ -865,6 +868,73 @@ async function analyzeCouponForImport(urlValue, env) {
     }
     throw new HttpError(502, detailMessage || 'クーポン解析に失敗しました。');
   }
+}
+
+async function deleteCoupon(request, env, couponId) {
+  const coupon = await env.COUPON_DB.prepare(`
+    SELECT id, name, coupon_type, cover_object_key
+    FROM coupons
+    WHERE id = ?
+  `).bind(couponId).first();
+
+  if (!coupon) throw new HttpError(404, '削除するクーポンが見つかりません。');
+
+  const active = await env.COUPON_DB.prepare(`
+    SELECT COUNT(*) AS count
+    FROM reservations
+    WHERE coupon_id = ?
+      AND status IN ('reserved', 'pending_confirmation')
+      AND expires_at > ?
+  `).bind(couponId, nowSeconds()).first();
+
+  if (Number(active?.count || 0) > 0) {
+    throw new HttpError(409, '予約中のクーポンは削除できません。予約を完了またはキャンセルしてください。');
+  }
+
+  const imageRows = await env.COUPON_DB.prepare(`
+    SELECT i.object_key
+    FROM coupon_items i
+    JOIN coupon_expiries e ON e.id = i.expiry_id
+    WHERE e.coupon_id = ?
+      AND i.object_key IS NOT NULL
+  `).bind(couponId).all();
+
+  const imageKeys = [
+    coupon.cover_object_key,
+    ...(imageRows.results || []).map(row => row.object_key)
+  ].filter(Boolean);
+
+  const statements = [
+    env.COUPON_DB.prepare(`
+      DELETE FROM coupon_items
+      WHERE expiry_id IN (SELECT id FROM coupon_expiries WHERE coupon_id = ?)
+    `).bind(couponId),
+    env.COUPON_DB.prepare('DELETE FROM reservations WHERE coupon_id = ?').bind(couponId),
+    env.COUPON_DB.prepare('DELETE FROM coupon_expiries WHERE coupon_id = ?').bind(couponId),
+    env.COUPON_DB.prepare('DELETE FROM coupon_url_reconcile WHERE coupon_id = ?').bind(couponId),
+    env.COUPON_DB.prepare('DELETE FROM coupons WHERE id = ?').bind(couponId)
+  ];
+
+  const results = await env.COUPON_DB.batch(statements);
+  const deleted = Number(results.at(-1)?.meta?.changes || 0);
+  if (!deleted) throw new HttpError(409, 'クーポンを削除できませんでした。');
+
+  let imageDeleteFailed = 0;
+  if (imageKeys.length) {
+    try {
+      await env.COUPON_IMAGES.delete([...new Set(imageKeys)]);
+    } catch {
+      imageDeleteFailed = imageKeys.length;
+    }
+  }
+
+  return json(request, env, {
+    deleted: true,
+    couponId,
+    name: coupon.name,
+    deletedImageCount: imageDeleteFailed ? 0 : [...new Set(imageKeys)].length,
+    imageCleanupPending: imageDeleteFailed > 0
+  });
 }
 
 async function registerAutoCoupon(request, env) {
