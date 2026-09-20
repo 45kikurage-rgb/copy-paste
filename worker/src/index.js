@@ -3,7 +3,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
 const DEFAULT_COUPON_ANALYZER_API = 'https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
 const DEFAULT_COUPON_ANALYZER_BASE = 'https://coupon-capture.45kikurage.workers.dev';
-const URL_RECONCILE_VERSION = '2026-09-21-v1';
+const URL_RECONCILE_VERSION = '2026-09-21-v2';
 
 export default {
   async fetch(request, env) {
@@ -105,6 +105,11 @@ function canonicalCouponNameForStorage(name, redeemPlace = '') {
   }
   if (/ななチキ/.test(value) && /揚げ鶏/.test(value)) {
     return 'ななチキ または 揚げ鶏 いずれか1個';
+  }
+  if (/スタバ|スターバックス|STARBUCKS/i.test(value)) {
+    const amount = value.normalize('NFKC').match(/(?:税込\s*)?(\d{3,5})\s*円|(?:スタバ|スターバックス)\s*(\d{3,5})/i);
+    const yen = Number(amount?.[1] || amount?.[2] || 0);
+    if (yen > 0) return 'スタバ' + yen;
   }
   if ((/カフェ|ラテ|コーヒー|飲料|ml|mL/i.test(value)) && /いずれか1点$/.test(value)) {
     value = value.replace(/いずれか1点$/, 'いずれか1本');
@@ -278,6 +283,7 @@ async function countPendingUrlReconcile(env) {
       AND (
         i.url_value LIKE 'https://coupon.sej.co.jp/%'
         OR i.url_value LIKE 'https://ncpfa.famima.com/%'
+        OR i.url_value LIKE 'https://gift.starbucks.co.jp/%'
       )
       AND s.coupon_id IS NULL
   `).bind(URL_RECONCILE_VERSION).first();
@@ -350,6 +356,7 @@ async function reconcileExistingUrlCoupons(request, env) {
       AND (
         i.url_value LIKE 'https://coupon.sej.co.jp/%'
         OR i.url_value LIKE 'https://ncpfa.famima.com/%'
+        OR i.url_value LIKE 'https://gift.starbucks.co.jp/%'
       )
       AND s.coupon_id IS NULL
     GROUP BY c.id
@@ -846,9 +853,108 @@ async function analyzeSevenDirectForImport(urlValue) {
   };
 }
 
+async function fetchStarbucksDirectPage(urlValue) {
+  let current = new URL(urlValue);
+  for (let redirect = 0; redirect <= 4; redirect += 1) {
+    if (current.protocol !== 'https:' || !/(^|\.)starbucks\.co\.jp$/i.test(current.hostname)) {
+      throw new HttpError(422, 'スターバックス公式サイト以外へ転送されたため停止しました。');
+    }
+    let response;
+    try {
+      response = await fetch(current, {
+        redirect: 'manual',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'ja,en;q=0.8',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36'
+        }
+      });
+    } catch {
+      throw new HttpError(502, 'スターバックスeGiftページに接続できませんでした。');
+    }
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) throw new HttpError(422, 'スターバックスの転送先を確認できませんでした。');
+      current = new URL(location, current);
+      continue;
+    }
+    if (!response.ok) throw new HttpError(502, 'スターバックスのページ取得エラー（' + response.status + '）');
+    return { html: await readResponseText(response, 2500000), current };
+  }
+  throw new HttpError(422, 'スターバックスの転送回数が多すぎます。');
+}
+
+function starbucksOgImage(html) {
+  const a = String(html || '').match(/<meta\b[^>]*(?:property|name)=["']og:image["'][^>]*content=["']([^"']+)["'][^>]*>/i);
+  if (a?.[1]) return decodeHtmlEntities(a[1]);
+  const b = String(html || '').match(/<meta\b[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["']og:image["'][^>]*>/i);
+  return b?.[1] ? decodeHtmlEntities(b[1]) : '';
+}
+
+async function fetchStarbucksCover(html, current) {
+  const sources = [];
+  const ogImage = starbucksOgImage(html);
+  if (ogImage) sources.push({ source: ogImage, og: true });
+  for (const item of htmlImageDescriptors(html)) {
+    const label = item.source + ' ' + item.alt;
+    if (/logo|icon|arrow|qr|barcode/i.test(label)) continue;
+    if (/ticket|gift|drink|500|700|starbucks|スターバックス/i.test(label)) sources.push({ source: item.source, og: false });
+  }
+  const seen = new Set();
+  for (const entry of sources) {
+    let url;
+    try { url = new URL(entry.source, current); } catch { continue; }
+    if (url.protocol !== 'https:' || seen.has(url.href)) continue;
+    seen.add(url.href);
+    if (!/(^|\.)starbucks\.co\.jp$/i.test(url.hostname) && !entry.og) continue;
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Accept': 'image/png,image/jpeg,image/webp,image/*',
+          'Referer': current.toString(),
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36'
+        }
+      });
+      if (!response.ok) continue;
+      const contentType = (response.headers.get('content-type') || '').split(';', 1)[0].toLowerCase().replace('image/jpg', 'image/jpeg');
+      if (!/^image\/(?:png|jpeg|webp)$/.test(contentType)) continue;
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) continue;
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 32768) binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
+      return 'data:' + contentType + ';base64,' + btoa(binary);
+    } catch {}
+  }
+  return null;
+}
+
+async function analyzeStarbucksDirectForImport(urlValue) {
+  const parsed = new URL(urlValue);
+  if (parsed.hostname !== 'gift.starbucks.co.jp' || !/^\/e\/[A-Za-z0-9_-]+\/?$/.test(parsed.pathname)) return null;
+  const page = await fetchStarbucksDirectPage(urlValue);
+  const text = htmlVisibleLines(page.html).join('\n').normalize('NFKC');
+  const amountMatch = text.match(/(?:税込\s*)?(\d{3,5})\s*円(?:まで)?/i) || text.match(/(?:DRINK\s*TICKET|eGift)[\s\S]{0,160}?(\d{3,5})/i);
+  const amount = Number(amountMatch?.[1] || 0);
+  if (!amount) throw new HttpError(422, 'スターバックスeGiftの金額を読み取れませんでした。');
+  const expiresOn = extractLatestIsoDate(text);
+  if (!expiresOn) throw new HttpError(422, 'スターバックスeGiftの有効期限を読み取れませんでした。');
+  return {
+    product: 'スタバ' + amount,
+    redeemPlace: 'スターバックス',
+    merchant: 'スターバックス',
+    expiresOn,
+    productImageDataUri: await fetchStarbucksCover(page.html, page.current),
+    site: 'starbucks',
+    status: 'ok',
+    analysisMode: 'direct-starbucks'
+  };
+}
 async function analyzeCouponForImport(urlValue, env) {
   const directSeven = await analyzeSevenDirectForImport(urlValue);
   if (directSeven) return directSeven;
+
+  const directStarbucks = await analyzeStarbucksDirectForImport(urlValue);
+  if (directStarbucks) return directStarbucks;
 
   const detailApi = String(env.COUPON_ANALYZER_API || DEFAULT_COUPON_ANALYZER_API).trim();
   const detail = await fetchAnalyzerJson(detailApi, { url: urlValue });
