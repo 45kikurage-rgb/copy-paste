@@ -360,7 +360,201 @@ async function analyzeCouponLegacy(urlValue, env) {
   };
 }
 
+function decodeHtmlEntities(value) {
+  return String(value || '')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(Number.parseInt(n, 16)))
+    .replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>');
+}
+
+function htmlVisibleLines(html) {
+  return decodeHtmlEntities(String(html || '')
+    .replace(/<!--.*?-->/gs, ' ')
+    .replace(/<(script|style)\b[^>]*>.*?<\/\1>/gis, ' ')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/p>|<\/div>|<\/li>|<\/dd>|<\/dt>|<\/section>|<\/h\d>/gi, '\n')
+    .replace(/<[^>]+>/g, ' '))
+    .split(/\r?\n/)
+    .map(line => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function htmlImageDescriptors(html) {
+  return (String(html || '').match(/<img\b[^>]*>/gi) || []).flatMap(tag => {
+    const source = tag.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)?.[2];
+    if (!source) return [];
+    const alt = tag.match(/\balt\s*=\s*(["'])(.*?)\1/i)?.[2] || '';
+    return [{ source: decodeHtmlEntities(source), alt: decodeHtmlEntities(alt) }];
+  });
+}
+
+function pickSevenFoodProduct(lines, descriptors) {
+  const generic = /^(?:引換クーポン|クーポン|対象商品|ご注意|クーポンの利用期間|セブン[‐ー・\- ]?イレブン店舗で引換えられます)$/;
+  const descriptor = descriptors
+    .map(item => item.alt.replace(/\s+/g, ' ').trim())
+    .filter(value => value.length >= 3 && value.length <= 120 && !generic.test(value))
+    .sort((a, b) => {
+      const score = value => (/(?:または|いずれか)/.test(value) ? 500 : 0)
+        + (/\d+\s*(?:個|本|枚|パック)/.test(value) ? 250 : 0)
+        + (/ななチキ|揚げ鶏|チキン|おにぎり|パン|菓子|アイス|弁当|飲料/.test(value) ? 120 : 0)
+        - (/バーコード|ロゴ|QR|2次元|店舗で|対象商品の内/.test(value) ? 500 : 0);
+      return score(b) - score(a);
+    })[0];
+  if (descriptor) return descriptor;
+
+  const candidates = lines
+    .map((line, index) => ({ line, index }))
+    .filter(item => item.line.length >= 3 && item.line.length <= 120 && !generic.test(item.line))
+    .map(item => {
+      let score = Math.max(0, 50 - item.index);
+      if (/(?:または|いずれか)/.test(item.line)) score += 500;
+      if (/\d+\s*(?:個|本|枚|パック)/.test(item.line)) score += 250;
+      if (/ななチキ|揚げ鶏|チキン|おにぎり|パン|菓子|アイス|弁当|飲料/.test(item.line)) score += 120;
+      if (/対象商品の内|店舗でご利用可能|利用期間|ご注意|販売休止|地域により|画像はイメージ/.test(item.line)) score -= 500;
+      return { ...item, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  if (candidates[0]?.score > 80) return candidates[0].line;
+
+  const targetIndex = lines.findIndex(line => /^■?対象商品/.test(line));
+  if (targetIndex >= 0) {
+    const names = [];
+    for (const line of lines.slice(targetIndex + 1, targetIndex + 6)) {
+      const clean = line.replace(/^[・●■※\s]+/, '').trim();
+      if (!clean || /対象外|ご注意|利用期間|クーポン/.test(clean)) break;
+      if (clean.length <= 40) names.push(clean);
+      if (names.length >= 3) break;
+    }
+    if (names.length === 1) return names[0];
+    if (names.length > 1) return `${names.join(' または ')} いずれか1個`;
+  }
+  return '';
+}
+
+async function readResponseText(response, maxBytes = 1_500_000) {
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (!bytes.length || bytes.length > maxBytes) throw new HttpError(422, 'クーポンページを読み取れませんでした。');
+  const contentType = response.headers.get('content-type') || '';
+  const charset = /charset\s*=\s*([^;\s]+)/i.exec(contentType)?.[1]?.toLowerCase() || '';
+  try {
+    return new TextDecoder(/shift[_-]?jis|sjis|windows-31j/i.test(charset) ? 'shift_jis' : 'utf-8').decode(bytes);
+  } catch {
+    return new TextDecoder().decode(bytes);
+  }
+}
+
+async function fetchSevenDirectPage(urlValue) {
+  let current = new URL(urlValue);
+  for (let redirect = 0; redirect <= 3; redirect += 1) {
+    if (current.protocol !== 'https:' || current.hostname !== 'coupon.sej.co.jp' || !/^\/order\//.test(current.pathname)) {
+      throw new HttpError(422, 'セブンイレブン公式クーポン以外へ転送されたため停止しました。');
+    }
+    let response;
+    try {
+      response = await fetch(current, {
+        redirect: 'manual',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'ja,en;q=0.8',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36'
+        }
+      });
+    } catch {
+      throw new HttpError(502, 'セブンイレブンのクーポンページに接続できませんでした。');
+    }
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) throw new HttpError(422, 'セブンイレブンの転送先を確認できませんでした。');
+      current = new URL(location, current);
+      continue;
+    }
+    if (!response.ok) throw new HttpError(502, `セブンイレブンのページ取得エラー（${response.status}）`);
+    if (current.pathname.startsWith('/order/cpnsp_err')) throw new HttpError(422, 'このクーポンは無効または期限切れです。');
+    return { html: await readResponseText(response), current };
+  }
+  throw new HttpError(422, 'セブンイレブンの転送回数が多すぎます。');
+}
+
+async function fetchSevenProductImage(descriptors, current) {
+  const candidates = descriptors
+    .map(item => {
+      let url;
+      try { url = new URL(item.source, current); } catch { return null; }
+      if (url.protocol !== 'https:' || url.hostname !== 'coupon.sej.co.jp') return null;
+      const label = `${url.pathname} ${item.alt}`;
+      if (/barcode|bar-code|qr|2d|logo/i.test(label)) return null;
+      let score = 0;
+      if (/shohin|product|item|商品/i.test(label)) score += 1000;
+      if (/(?:または|いずれか|ななチキ|揚げ鶏|チキン)/.test(item.alt)) score += 800;
+      return { url, score };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4);
+
+  let best = null;
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate.url, {
+        headers: {
+          'Accept': 'image/png,image/jpeg,image/webp,image/*',
+          'Referer': current.toString(),
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36'
+        }
+      });
+      if (!response.ok) continue;
+      const contentType = (response.headers.get('content-type') || '').split(';', 1)[0].toLowerCase().replace('image/jpg', 'image/jpeg');
+      if (!/^image\/(?:png|jpeg|webp)$/.test(contentType)) continue;
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) continue;
+      const weighted = candidate.score + Math.min(bytes.length, 2_000_000) / 1000;
+      if (!best || weighted > best.weighted) best = { bytes, contentType, weighted };
+    } catch {}
+  }
+  if (!best) return null;
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < best.bytes.length; i += chunk) {
+    binary += String.fromCharCode(...best.bytes.subarray(i, i + chunk));
+  }
+  return `data:${best.contentType};base64,${btoa(binary)}`;
+}
+
+async function analyzeSevenDirectForImport(urlValue) {
+  const parsed = new URL(urlValue);
+  if (parsed.hostname !== 'coupon.sej.co.jp' || parsed.pathname !== '/order/cpnsp_03.do' || !parsed.searchParams.get('hansoku_id')) {
+    return null;
+  }
+
+  const { html, current } = await fetchSevenDirectPage(urlValue);
+  const lines = htmlVisibleLines(html);
+  const text = lines.join('\n');
+  if (/このクーポンは(?:ご)?利用済みです/.test(text)) throw new HttpError(422, 'このクーポンは利用済みです。');
+
+  const descriptors = htmlImageDescriptors(html);
+  const product = pickSevenFoodProduct(lines, descriptors);
+  const expiresOn = extractLatestIsoDate(text);
+  if (!product) throw new HttpError(422, '商品名を読み取れませんでした。');
+  if (!expiresOn) throw new HttpError(422, '利用期限を読み取れませんでした。');
+
+  return {
+    product,
+    redeemPlace: 'セブンイレブン',
+    merchant: 'セブンイレブン',
+    expiresOn,
+    productImageDataUri: await fetchSevenProductImage(descriptors, current),
+    site: 'seven',
+    status: 'ok',
+    analysisMode: 'direct-seven'
+  };
+}
+
 async function analyzeCouponForImport(urlValue, env) {
+  const directSeven = await analyzeSevenDirectForImport(urlValue);
+  if (directSeven) return directSeven;
+
   const detailApi = String(env.COUPON_ANALYZER_API || DEFAULT_COUPON_ANALYZER_API).trim();
   const detail = await fetchAnalyzerJson(detailApi, { url: urlValue });
   if (detail.ok && detail.data?.status === 'ok') return { ...detail.data, analysisMode: 'detail' };
