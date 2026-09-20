@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v13-coupon-auto';
+const CACHE='url-format-shisa-v14-coupon-fallback';
 const CORE=[
   './',
   './index.html',
