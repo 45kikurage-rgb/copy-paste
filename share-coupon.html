@@ -84,13 +84,20 @@ h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-w
     if(!MANAGER_API){showResult(null,'自己利用分APIが設定されていません。',true);return}
     try{
       status.textContent='商品名・引換先・期限・画像を解析しています...';
-      const analyzed=await jsonFetch(ANALYZER_API,{
+      const analyzedResponse=await jsonFetch(ANALYZER_API,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({url})
+        body:JSON.stringify({items:[{label:'1',url}]})
       });
+      const analyzed=analyzedResponse.results?.[0];
+      if(!analyzed) throw new Error('解析結果を取得できませんでした。');
+      if(analyzed.status!=='ok') throw new Error(analyzed.message||'自動登録に必要な情報を読み取れませんでした。');
+      const redeemPlace=analyzed.merchant||analyzed.brand||'';
+      const imageDataUri=analyzed.imageBase64&&analyzed.imageMimeType
+        ? `data:${analyzed.imageMimeType};base64,${analyzed.imageBase64}`
+        : null;
       product.textContent=analyzed.product;
-      place.textContent=analyzed.redeemPlace;
+      place.textContent=redeemPlace;
       expiry.textContent=analyzed.expiresOn.replace(/-/g,'/');
       detail.hidden=false;
       status.textContent='自己利用分へ登録しています...';
@@ -99,17 +106,17 @@ h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-w
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           name:analyzed.product,
-          redeemPlace:analyzed.redeemPlace,
+          redeemPlace,
           expiresOn:analyzed.expiresOn,
           url,
-          productImageDataUri:analyzed.productImageDataUri||null
+          productImageDataUri:imageDataUri
         })
       });
       if(registered.newCount>0){
-        showResult(analyzed,'登録しました。');
+        showResult({...analyzed,redeemPlace},'登録しました。');
         note.textContent=registered.imageSaved?'商品画像も保存しました。':'商品画像を取得できなかったため仮画像で登録しました。';
       }else{
-        showResult(analyzed,'このURLは登録済みです。');
+        showResult({...analyzed,redeemPlace},'このURLは登録済みです。');
         note.textContent='同じURLは追加していません。';
       }
       setTimeout(()=>{ location.href='./coupons.html'; },1800);
