@@ -390,17 +390,19 @@ function htmlImageDescriptors(html) {
 }
 
 function pickSevenFoodProduct(lines, descriptors) {
-  const generic = /^(?:引換クーポン|クーポン|対象商品|ご注意|クーポンの利用期間|セブン[‐ー・\- ]?イレブン店舗で引換えられます)$/;
+  const generic = /^(?:引換クーポン|クーポン|対象商品|商品画像|画像|バーコード|ロゴ|ご注意|クーポンの利用期間|セブン[‐ー・\- ]?イレブン店舗で引換えられます)$/;
   const descriptor = descriptors
     .map(item => item.alt.replace(/\s+/g, ' ').trim())
     .filter(value => value.length >= 3 && value.length <= 120 && !generic.test(value))
-    .sort((a, b) => {
-      const score = value => (/(?:または|いずれか)/.test(value) ? 500 : 0)
+    .map(value => ({
+      value,
+      score: (/(?:または|いずれか)/.test(value) ? 500 : 0)
         + (/\d+\s*(?:個|本|枚|パック)/.test(value) ? 250 : 0)
         + (/ななチキ|揚げ鶏|チキン|おにぎり|パン|菓子|アイス|弁当|飲料/.test(value) ? 120 : 0)
-        - (/バーコード|ロゴ|QR|2次元|店舗で|対象商品の内/.test(value) ? 500 : 0);
-      return score(b) - score(a);
-    })[0];
+        - (/バーコード|ロゴ|QR|2次元|店舗で|対象商品の内/.test(value) ? 500 : 0)
+    }))
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.value;
   if (descriptor) return descriptor;
 
   const targetIndex = lines.findIndex(line => /^■?対象商品/.test(line));
