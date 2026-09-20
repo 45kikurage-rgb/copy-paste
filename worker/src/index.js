@@ -238,17 +238,46 @@ function redeemPlaceForSite(site, brand = '') {
   return brand || '';
 }
 
+function currentTokyoParts() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const get = type => Number(parts.find(part => part.type === type)?.value || 0);
+  return { year: get('year'), month: get('month'), day: get('day') };
+}
+
+function validIsoDate(year, month, day) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return '';
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function inferExpiryYear(month, day) {
+  const today = currentTokyoParts();
+  let year = today.year;
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  const todayUtc = new Date(Date.UTC(today.year, today.month - 1, today.day));
+  if (Math.floor((candidate - todayUtc) / 86400000) < -31) year += 1;
+  return year;
+}
+
 function extractLatestIsoDate(value) {
   const text = String(value || '').normalize('NFKC');
   const values = [];
+
   for (const match of text.matchAll(/(20\d{2})\s*[年\/.-]\s*(\d{1,2})\s*[月\/.-]\s*(\d{1,2})\s*日?/g)) {
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
-    const date = new Date(Date.UTC(year, month - 1, day));
-    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) continue;
-    values.push(`${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+    const iso = validIsoDate(Number(match[1]), Number(match[2]), Number(match[3]));
+    if (iso) values.push(iso);
   }
+
+  for (const match of text.matchAll(/(?:^|[^0-9])(\d{1,2})\s*[月\/.\-]\s*(\d{1,2})\s*日?/g)) {
+    const month = Number(match[1]);
+    const day = Number(match[2]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) continue;
+    const iso = validIsoDate(inferExpiryYear(month, day), month, day);
+    if (iso) values.push(iso);
+  }
+
   return values.length ? [...new Set(values)].sort().at(-1) : '';
 }
 
