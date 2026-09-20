@@ -41,6 +41,7 @@ h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-w
 (() => {
   'use strict';
   const MANAGER_API=String(window.COUPON_API_BASE||'').replace(/\/$/,'');
+  const ANALYZER_BASE='https://coupon-capture.45kikurage.workers.dev';
   const status=document.getElementById('status');
   const spinner=document.getElementById('spinner');
   const detail=document.getElementById('detail');
@@ -65,6 +66,86 @@ h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-w
     if(!response.ok) throw new Error(data.error||`通信エラー（${response.status}）`);
     return data;
   }
+  function placeForSite(site,brand=''){
+    if(site==='seven') return 'セブンイレブン';
+    if(site==='familymart') return 'ファミリーマート';
+    if(site==='misterdonut') return 'ミスタードーナツ';
+    if(site==='giftee_box') return brand||'giftee Box';
+    return brand||'';
+  }
+  function tokyoToday(){
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    const get=type=>Number(parts.find(part=>part.type===type)?.value||0);
+    return{year:get('year'),month:get('month'),day:get('day')};
+  }
+  function validIsoDate(year,month,day){
+    const date=new Date(Date.UTC(year,month-1,day));
+    if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day)return'';
+    return `${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  }
+  function inferYear(month,day){
+    const today=tokyoToday();
+    let year=today.year;
+    const candidate=new Date(Date.UTC(year,month-1,day));
+    const base=new Date(Date.UTC(today.year,today.month-1,today.day));
+    if(Math.floor((candidate-base)/86400000)<-31)year+=1;
+    return year;
+  }
+  function extractExpiry(text){
+    const normalized=String(text||'').normalize('NFKC');
+    const dates=[];
+    for(const match of normalized.matchAll(/(20\d{2})\s*[年\/.-]\s*(\d{1,2})\s*[月\/.-]\s*(\d{1,2})\s*日?/g)){
+      const iso=validIsoDate(Number(match[1]),Number(match[2]),Number(match[3]));
+      if(iso)dates.push(iso);
+    }
+    for(const match of normalized.matchAll(/(?:^|[^0-9])(\d{1,2})\s*[月\/.\-]\s*(\d{1,2})\s*日?/g)){
+      const month=Number(match[1]),day=Number(match[2]);
+      if(month<1||month>12||day<1||day>31)continue;
+      const iso=validIsoDate(inferYear(month,day),month,day);
+      if(iso)dates.push(iso);
+    }
+    return dates.length?[...new Set(dates)].sort().at(-1):'';
+  }
+  function decodeBase64Text(value){
+    try{
+      const binary=atob(String(value||''));
+      const bytes=new Uint8Array(binary.length);
+      for(let i=0;i<binary.length;i+=1)bytes[i]=binary.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    }catch{return''}
+  }
+  function productImageFromSvg(svg){
+    const exact=String(svg||'').match(/<image\s+href="(data:image\/(?:png|jpeg|webp);base64,[^"]+)"\s+x="80"\s+y="250"/i);
+    if(exact)return exact[1];
+    const generic=[...String(svg||'').matchAll(/<image\b[^>]*href="(data:image\/(?:png|jpeg|webp);base64,[^"]+)"[^>]*>/gi)];
+    return generic[0]?.[1]||null;
+  }
+  async function analyzeLegacy(url){
+    const analyzed=await jsonFetch(`${ANALYZER_BASE}/api/analyze`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({items:[{label:'1',url}]})
+    });
+    const item=analyzed.results?.[0];
+    if(!item)throw new Error('商品情報を読み取れませんでした。');
+    if(item.status==='used')throw new Error('このクーポンは利用済みです。');
+    if(item.status!=='ok'||!item.product||item.product==='商品名不明')throw new Error(item.message||'商品名を読み取れませんでした。');
+
+    const captured=await jsonFetch(`${ANALYZER_BASE}/api/capture-one`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url,mode:'fast'})
+    });
+    if(!captured.base64)throw new Error('利用期限を読み取れませんでした。');
+    const svg=decodeBase64Text(captured.base64);
+    const expiresOn=extractExpiry(svg);
+    if(!expiresOn)throw new Error('利用期限を読み取れませんでした。');
+    return{
+      product:item.product,
+      redeemPlace:placeForSite(item.site,item.brand),
+      expiresOn,
+      productImageDataUri:productImageFromSvg(svg)
+    };
+  }
+
   function showResult(data,message,isError=false){
     spinner.hidden=true;
     status.textContent=message;
@@ -83,11 +164,28 @@ h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-w
     if(!MANAGER_API){showResult(null,'自己利用分APIが設定されていません。',true);return}
     try{
       status.textContent='商品名・引換先・期限・画像を解析して登録しています...';
-      const registered=await jsonFetch(`${MANAGER_API}/api/coupons/register-auto`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({url})
-      });
+      let registered;
+      try{
+        registered=await jsonFetch(`${MANAGER_API}/api/coupons/register-auto`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({url})
+        });
+      }catch(primaryError){
+        status.textContent='互換解析で再確認しています...';
+        const analyzed=await analyzeLegacy(url);
+        registered=await jsonFetch(`${MANAGER_API}/api/coupons/register-auto`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            name:analyzed.product,
+            redeemPlace:analyzed.redeemPlace,
+            expiresOn:analyzed.expiresOn,
+            url,
+            productImageDataUri:analyzed.productImageDataUri
+          })
+        });
+      }
       const result={
         product:registered.product||registered.name||'',
         redeemPlace:registered.redeemPlace||'',
