@@ -90,16 +90,23 @@
   }
 
   function displayCouponName(value) {
-    const name=String(value||'').replace(/\s+/g,' ').trim();
+    let name=String(value||'').normalize('NFKC').replace(/\s+/g,' ').trim();
 
-    // 既存登録済みのセブン複数商品名も、一覧では短く読みやすく表示する。
-    const cafe=name.match(/^(セブンプレミアム\s+カフェラテ)\s+.+?(?:または|\s{2,}).*$/);
-    if(cafe) return `${cafe[1]} いずれか1本`;
-
-    return name
+    name=name
       .replace(/\s*(?:または\s*)?運営元[:：].*$/,'')
       .replace(/\s*(?:または\s*)?提供元[:：].*$/,'')
       .replace(/\s*(?:または\s*)?発行元[:：].*$/,'');
+
+    if(/セブンプレミアム/.test(name)&&/カフェラテ/.test(name)){
+      return 'セブンプレミアム カフェラテ いずれか1本';
+    }
+    if(/ななチキ/.test(name)&&/揚げ鶏/.test(name)){
+      return 'ななチキ または 揚げ鶏 いずれか1個';
+    }
+    if((/カフェ|ラテ|コーヒー|飲料|ml/i.test(name))&&/いずれか1点$/.test(name)){
+      return name.replace(/いずれか1点$/,'いずれか1本');
+    }
+    return name;
   }
 
   function createCouponCard(coupon) {
