@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v20-coupon-starbucks-fix';
+const CACHE='url-format-shisa-v21-coupon-komeda';
 const CORE=[
   './',
   './index.html',
