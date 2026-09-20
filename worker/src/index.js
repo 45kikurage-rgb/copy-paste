@@ -3,6 +3,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
 const DEFAULT_COUPON_ANALYZER_API = 'https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
 const DEFAULT_COUPON_ANALYZER_BASE = 'https://coupon-capture.45kikurage.workers.dev';
+const URL_RECONCILE_VERSION = '2026-09-21-v1';
 
 export default {
   async fetch(request, env) {
@@ -21,6 +22,7 @@ export default {
         return json(request, env, { ok: true, reservationMinutes: 10 });
       }
       if (request.method === 'GET' && path === '/api/coupons') return await listCoupons(request, env);
+      if (request.method === 'POST' && path === '/api/coupons/reconcile') return await reconcileExistingUrlCoupons(request, env);
       if (request.method === 'POST' && path === '/api/coupons/register') return await registerCoupon(request, env);
       if (request.method === 'POST' && path === '/api/coupons/register-auto') return await registerAutoCoupon(request, env);
 
@@ -75,6 +77,17 @@ async function ensureCouponSchema(env) {
       if (!/duplicate column|already exists/i.test(message)) throw error;
     }
   }
+
+  await env.COUPON_DB.prepare(`
+    CREATE TABLE IF NOT EXISTS coupon_url_reconcile (
+      coupon_id TEXT NOT NULL,
+      version TEXT NOT NULL,
+      status TEXT NOT NULL,
+      message TEXT,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (coupon_id, version)
+    )
+  `).run();
 }
 
 function canonicalCouponNameForStorage(name, redeemPlace = '') {
@@ -248,6 +261,140 @@ async function releaseExpired(env) {
       WHERE status IN ('reserved', 'pending_confirmation') AND expires_at <= ?
     `).bind(now, now)
   ]);
+}
+
+async function countPendingUrlReconcile(env) {
+  const row = await env.COUPON_DB.prepare(`
+    SELECT COUNT(DISTINCT c.id) AS count
+    FROM coupons c
+    JOIN coupon_expiries e ON e.coupon_id = c.id
+    JOIN coupon_items i ON i.expiry_id = e.id AND i.item_type = 'url'
+    LEFT JOIN coupon_url_reconcile s
+      ON s.coupon_id = c.id AND s.version = ?
+    WHERE c.coupon_type = 'url'
+      AND (
+        i.url_value LIKE 'https://coupon.sej.co.jp/%'
+        OR i.url_value LIKE 'https://ncpfa.famima.com/%'
+      )
+      AND s.coupon_id IS NULL
+  `).bind(URL_RECONCILE_VERSION).first();
+  return Number(row?.count || 0);
+}
+
+async function saveReconcileStatus(env, couponId, status, message = '') {
+  await env.COUPON_DB.prepare(`
+    INSERT INTO coupon_url_reconcile (coupon_id, version, status, message, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(coupon_id, version) DO UPDATE SET
+      status = excluded.status,
+      message = excluded.message,
+      updated_at = excluded.updated_at
+  `).bind(couponId, URL_RECONCILE_VERSION, status, String(message || '').slice(0, 300), nowSeconds()).run();
+}
+
+async function reconcileOneExistingUrlCoupon(env, row) {
+  const analyzed = await analyzeCouponForImport(row.url_value, env);
+  const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || row.redeem_place || '').trim();
+  const canonicalName = canonicalCouponNameForStorage(String(analyzed.product || row.name || '').trim(), redeemPlace);
+
+  if (!canonicalName || canonicalName === '商品名不明' || !redeemPlace) {
+    throw new HttpError(422, '商品名または引換先を確認できませんでした。');
+  }
+
+  let coverObjectKey = row.cover_object_key || null;
+  if (!coverObjectKey && analyzed.productImageDataUri) {
+    const image = decodeImageDataUri(analyzed.productImageDataUri);
+    if (image) {
+      const imageHash = await sha256Buffer(image.bytes);
+      coverObjectKey = `covers/${row.id}/reconcile-${imageHash}.${extensionFor(image.mimeType)}`;
+      await env.COUPON_IMAGES.put(coverObjectKey, image.bytes, { httpMetadata: { contentType: image.mimeType } });
+    }
+  }
+
+  await env.COUPON_DB.prepare(`
+    UPDATE coupons
+    SET name = ?, redeem_place = ?, cover_object_key = COALESCE(?, cover_object_key), updated_at = ?
+    WHERE id = ?
+  `).bind(canonicalName, redeemPlace, coverObjectKey, nowSeconds(), row.id).run();
+
+  return {
+    id: row.id,
+    beforeName: row.name,
+    afterName: canonicalName,
+    redeemPlace,
+    changed: row.name !== canonicalName || String(row.redeem_place || '') !== redeemPlace
+  };
+}
+
+async function reconcileExistingUrlCoupons(request, env) {
+  const body = await readJson(request);
+  const limit = Math.max(1, Math.min(6, Math.floor(Number(body.limit) || 4)));
+
+  const beforeCountRow = await env.COUPON_DB.prepare(
+    "SELECT COUNT(*) AS count FROM coupons WHERE coupon_type = 'url'"
+  ).first();
+  const beforeCount = Number(beforeCountRow?.count || 0);
+
+  const candidates = await env.COUPON_DB.prepare(`
+    SELECT c.id, c.name, c.redeem_place, c.cover_object_key, c.created_at,
+           MIN(i.url_value) AS url_value
+    FROM coupons c
+    JOIN coupon_expiries e ON e.coupon_id = c.id
+    JOIN coupon_items i ON i.expiry_id = e.id AND i.item_type = 'url'
+    LEFT JOIN coupon_url_reconcile s
+      ON s.coupon_id = c.id AND s.version = ?
+    WHERE c.coupon_type = 'url'
+      AND (
+        i.url_value LIKE 'https://coupon.sej.co.jp/%'
+        OR i.url_value LIKE 'https://ncpfa.famima.com/%'
+      )
+      AND s.coupon_id IS NULL
+    GROUP BY c.id
+    ORDER BY c.created_at ASC, c.id ASC
+    LIMIT ?
+  `).bind(URL_RECONCILE_VERSION, limit).all();
+
+  let processed = 0;
+  let changed = 0;
+  let failed = 0;
+  const details = [];
+
+  for (const row of candidates.results || []) {
+    processed += 1;
+    try {
+      const result = await reconcileOneExistingUrlCoupon(env, row);
+      if (result.changed) changed += 1;
+      details.push({ id: row.id, status: 'done', beforeName: result.beforeName, afterName: result.afterName });
+      await saveReconcileStatus(env, row.id, 'done', result.changed ? 'updated' : 'unchanged');
+    } catch (error) {
+      failed += 1;
+      const message = error instanceof Error ? error.message : '解析に失敗しました。';
+      details.push({ id: row.id, status: 'failed', name: row.name, message });
+      // 失敗カードは既存データを変更せず、今回の整理対象から外す。
+      await saveReconcileStatus(env, row.id, 'failed', message);
+    }
+  }
+
+  // 正規化後に、同じ商品＋引換先へまとまったカードを統合。
+  await mergeCanonicalCouponGroups(env);
+
+  const afterCountRow = await env.COUPON_DB.prepare(
+    "SELECT COUNT(*) AS count FROM coupons WHERE coupon_type = 'url'"
+  ).first();
+  const afterCount = Number(afterCountRow?.count || 0);
+  const merged = Math.max(0, beforeCount - afterCount);
+  const remaining = await countPendingUrlReconcile(env);
+
+  return json(request, env, {
+    version: URL_RECONCILE_VERSION,
+    processed,
+    changed,
+    failed,
+    merged,
+    remaining,
+    done: remaining === 0,
+    details
+  });
 }
 
 async function listCoupons(request, env) {
