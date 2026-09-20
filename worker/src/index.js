@@ -403,6 +403,19 @@ function pickSevenFoodProduct(lines, descriptors) {
     })[0];
   if (descriptor) return descriptor;
 
+  const targetIndex = lines.findIndex(line => /^■?対象商品/.test(line));
+  if (targetIndex >= 0) {
+    const names = [];
+    for (const line of lines.slice(targetIndex + 1, targetIndex + 7)) {
+      const clean = line.replace(/^[・●■※\s]+/, '').trim();
+      if (!clean || /対象外|ご注意|利用期間|クーポン|地域により|画像はイメージ/.test(clean)) break;
+      if (clean.length <= 40) names.push(clean);
+      if (names.length >= 3) break;
+    }
+    if (names.length === 1) return names[0];
+    if (names.length > 1) return `${names.join(' または ')} いずれか1個`;
+  }
+
   const candidates = lines
     .map((line, index) => ({ line, index }))
     .filter(item => item.line.length >= 3 && item.line.length <= 120 && !generic.test(item.line))
@@ -416,21 +429,7 @@ function pickSevenFoodProduct(lines, descriptors) {
     })
     .sort((a, b) => b.score - a.score);
 
-  if (candidates[0]?.score > 80) return candidates[0].line;
-
-  const targetIndex = lines.findIndex(line => /^■?対象商品/.test(line));
-  if (targetIndex >= 0) {
-    const names = [];
-    for (const line of lines.slice(targetIndex + 1, targetIndex + 6)) {
-      const clean = line.replace(/^[・●■※\s]+/, '').trim();
-      if (!clean || /対象外|ご注意|利用期間|クーポン/.test(clean)) break;
-      if (clean.length <= 40) names.push(clean);
-      if (names.length >= 3) break;
-    }
-    if (names.length === 1) return names[0];
-    if (names.length > 1) return `${names.join(' または ')} いずれか1個`;
-  }
-  return '';
+  return candidates[0]?.score > 80 ? candidates[0].line : '';
 }
 
 async function readResponseText(response, maxBytes = 1_500_000) {
