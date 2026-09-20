@@ -3,6 +3,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
 const DEFAULT_COUPON_ANALYZER_API = 'https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
 const DEFAULT_COUPON_ANALYZER_BASE = 'https://coupon-capture.45kikurage.workers.dev';
+let couponMaintenancePromise = null;
 
 export default {
   async fetch(request, env) {
@@ -11,6 +12,7 @@ export default {
       if (request.method === 'OPTIONS') return corsResponse(request, env, new Response(null, { status: 204 }));
       if (!isOriginAllowed(request, env)) return json(request, env, { error: 'このサイトからは利用できません。' }, 403);
       await ensureCouponSchema(env);
+      await ensureCouponMaintenance(env);
 
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/+$/, '') || '/';
@@ -73,6 +75,123 @@ async function ensureCouponSchema(env) {
       const message = String(error?.message || error || '');
       if (!/duplicate column|already exists/i.test(message)) throw error;
     }
+  }
+}
+
+function canonicalCouponNameForStorage(name, redeemPlace = '') {
+  let value = String(name || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
+  value = value
+    .replace(/\s*(?:または\s*)?運営元[:：].*$/,'')
+    .replace(/\s*(?:または\s*)?提供元[:：].*$/,'')
+    .replace(/\s*(?:または\s*)?発行元[:：].*$/,'');
+
+  if (/セブンプレミアム/.test(value) && /カフェラテ/.test(value)) {
+    return 'セブンプレミアム カフェラテ いずれか1本';
+  }
+  if (/ななチキ/.test(value) && /揚げ鶏/.test(value)) {
+    return 'ななチキ または 揚げ鶏 いずれか1個';
+  }
+  if ((/カフェ|ラテ|コーヒー|飲料|ml|mL/i.test(value)) && /いずれか1点$/.test(value)) {
+    value = value.replace(/いずれか1点$/, 'いずれか1本');
+  }
+  return value;
+}
+
+async function ensureCouponMaintenance(env) {
+  if (!couponMaintenancePromise) {
+    couponMaintenancePromise = mergeCanonicalCouponGroups(env).catch(error => {
+      couponMaintenancePromise = null;
+      throw error;
+    });
+  }
+  return couponMaintenancePromise;
+}
+
+async function mergeCanonicalCouponGroups(env) {
+  const rowsResult = await env.COUPON_DB.prepare(`
+    SELECT id, name, name_key, coupon_type, redeem_place, cover_object_key, created_at
+    FROM coupons
+    WHERE coupon_type = 'url'
+    ORDER BY created_at ASC, id ASC
+  `).all();
+  const rows = rowsResult.results || [];
+  const groups = new Map();
+
+  for (const row of rows) {
+    const canonicalName = canonicalCouponNameForStorage(row.name, row.redeem_place);
+    const canonicalKey = normalizeName(`${canonicalName}\u0000${row.redeem_place || ''}`);
+    const groupKey = `${canonicalKey}\u0001${row.coupon_type}`;
+    const group = groups.get(groupKey) || { canonicalName, canonicalKey, rows: [] };
+    group.rows.push(row);
+    groups.set(groupKey, group);
+  }
+
+  for (const group of groups.values()) {
+    const activeIds = group.rows.map(row => row.id);
+    if (!activeIds.length) continue;
+
+    if (activeIds.length > 1) {
+      const marks = activeIds.map(() => '?').join(',');
+      const activeReservation = await env.COUPON_DB.prepare(`
+        SELECT COUNT(*) AS count
+        FROM reservations
+        WHERE coupon_id IN (${marks})
+          AND status IN ('reserved', 'pending_confirmation')
+          AND expires_at > ?
+      `).bind(...activeIds, nowSeconds()).first();
+      if (Number(activeReservation?.count || 0) > 0) continue;
+    }
+
+    const target = group.rows.find(row => row.name_key === group.canonicalKey) || group.rows[0];
+    let targetCover = target.cover_object_key || null;
+
+    for (const source of group.rows) {
+      if (source.id === target.id) continue;
+
+      const expiries = await env.COUPON_DB.prepare(
+        'SELECT id, expires_on, created_at FROM coupon_expiries WHERE coupon_id = ? ORDER BY created_at, id'
+      ).bind(source.id).all();
+
+      for (const expiry of expiries.results || []) {
+        let targetExpiry = await env.COUPON_DB.prepare(
+          'SELECT id FROM coupon_expiries WHERE coupon_id = ? AND expires_on = ?'
+        ).bind(target.id, expiry.expires_on).first();
+
+        if (!targetExpiry) {
+          const newExpiryId = crypto.randomUUID();
+          await env.COUPON_DB.prepare(`
+            INSERT OR IGNORE INTO coupon_expiries (id, coupon_id, expires_on, created_at)
+            VALUES (?, ?, ?, ?)
+          `).bind(newExpiryId, target.id, expiry.expires_on, expiry.created_at || nowSeconds()).run();
+          targetExpiry = await env.COUPON_DB.prepare(
+            'SELECT id FROM coupon_expiries WHERE coupon_id = ? AND expires_on = ?'
+          ).bind(target.id, expiry.expires_on).first();
+        }
+
+        if (targetExpiry?.id) {
+          await env.COUPON_DB.prepare('UPDATE coupon_items SET expiry_id = ? WHERE expiry_id = ?')
+            .bind(targetExpiry.id, expiry.id).run();
+        }
+      }
+
+      await env.COUPON_DB.prepare('UPDATE reservations SET coupon_id = ? WHERE coupon_id = ?')
+        .bind(target.id, source.id).run();
+
+      if (!targetCover && source.cover_object_key) {
+        targetCover = source.cover_object_key;
+      } else if (source.cover_object_key && source.cover_object_key !== targetCover) {
+        await env.COUPON_IMAGES.delete(source.cover_object_key).catch(() => {});
+      }
+
+      await env.COUPON_DB.prepare('DELETE FROM coupons WHERE id = ?').bind(source.id).run();
+    }
+
+    const safeNameKey = group.canonicalKey;
+    await env.COUPON_DB.prepare(`
+      UPDATE coupons
+      SET name = ?, name_key = ?, cover_object_key = COALESCE(?, cover_object_key), updated_at = ?
+      WHERE id = ?
+    `).bind(group.canonicalName, safeNameKey, targetCover, nowSeconds(), target.id).run();
   }
 }
 
@@ -406,16 +525,16 @@ function compactSevenProductNames(names) {
 
   const common = prefix.join(' ').trim();
   if (common.length >= 6) {
-    const combined = clean.join(' ');
-    const unit = /\b(?:ml|mL|L)\b|\d+\s*(?:ml|mL|L)/.test(combined) ? '1本'
+    const combined = clean.join(' ').normalize('NFKC');
+    const unit = /\d+(?:\.\d+)?\s*(?:ml|mL|L)/.test(combined) ? '1本'
       : /\d+\s*本/.test(combined) ? '1本'
       : /\d+\s*個/.test(combined) ? '1個'
       : '1点';
     return `${common} いずれか${unit}`;
   }
 
-  const unit = clean.some(value => /\d+\s*個/.test(value)) ? '1個'
-    : clean.some(value => /\b(?:ml|mL|L)\b|\d+\s*本/.test(value)) ? '1本'
+  const unit = clean.some(value => /\d+\s*個/.test(value.normalize('NFKC'))) ? '1個'
+    : clean.some(value => /\d+(?:\.\d+)?\s*(?:ml|mL|L)|\d+\s*本/.test(value.normalize('NFKC'))) ? '1本'
     : '1点';
   return `${clean.join(' または ')} いずれか${unit}`;
 }
@@ -649,8 +768,8 @@ async function registerAutoCoupon(request, env) {
       }
     : await analyzeCouponForImport(urlValue, env);
 
-  const name = String(analyzed.product || '').trim();
   const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || '').trim();
+  const name = canonicalCouponNameForStorage(String(analyzed.product || '').trim(), redeemPlace);
   const expiresOn = String(analyzed.expiresOn || '').trim();
 
   if (!name || name === '商品名不明' || name.length > 100) throw new HttpError(422, '商品名を確認できません。');
