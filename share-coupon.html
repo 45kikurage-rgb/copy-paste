@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#fde0b6">
+<title>クーポン登録</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<style>
+:root{--bg:#fde0b6;--card:#fffaf1;--text:#282018;--sub:#776a5e;--border:#8c7762;--btn:#3c3026;--ok:#3f7f51;--ng:#9a3d31}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:"Yomogi","Klee One","Yu Mincho",cursive}
+body{min-height:100dvh;display:grid;place-items:center;padding:18px}
+.card{width:min(100%,520px);padding:20px;border:2px solid rgba(140,119,98,.55);border-radius:20px;background:var(--card);box-shadow:0 6px 18px rgba(88,58,31,.12);display:grid;gap:14px}
+h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-weight:700;font-size:1.04rem}
+.detail{display:grid;gap:7px;padding:12px;border:2px solid rgba(140,119,98,.35);border-radius:13px;background:#fffdf8}
+.row{display:grid;grid-template-columns:78px 1fr;gap:8px}.label{color:var(--sub);font-weight:700}.value{font-weight:700;overflow-wrap:anywhere}
+.spinner{width:42px;height:42px;margin:4px auto;border:4px solid rgba(60,48,38,.18);border-top-color:var(--btn);border-radius:50%;animation:spin .85s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}.ok{color:var(--ok)}.error{color:var(--ng)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.btn{min-height:48px;border:2px solid var(--btn);border-radius:11px;background:var(--btn);color:#fff;font:inherit;font-weight:700}
+.btn.soft{background:var(--card);color:var(--text)}.note{text-align:center;color:var(--sub);font-size:.82rem;line-height:1.45}
+</style>
+</head>
+<body>
+<main class="card">
+  <h1>クーポン自動登録</h1>
+  <div class="spinner" id="spinner"></div>
+  <div class="status" id="status">共有されたリンクを確認しています...</div>
+  <section class="detail" id="detail" hidden>
+    <div class="row"><div class="label">商品名</div><div class="value" id="product"></div></div>
+    <div class="row"><div class="label">引換先</div><div class="value" id="place"></div></div>
+    <div class="row"><div class="label">期限</div><div class="value" id="expiry"></div></div>
+  </section>
+  <div class="actions" id="actions" hidden>
+    <button class="btn soft" id="portalBtn" type="button">ポータルへ</button>
+    <button class="btn" id="listBtn" type="button">自己利用分を見る</button>
+  </div>
+  <div class="note" id="note">同じURLは重複登録しません。</div>
+</main>
+<script src="./coupon-config.js"></script>
+<script>
+(() => {
+  'use strict';
+  const ANALYZER_API='https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
+  const MANAGER_API=String(window.COUPON_API_BASE||'').replace(/\/$/,'');
+  const status=document.getElementById('status');
+  const spinner=document.getElementById('spinner');
+  const detail=document.getElementById('detail');
+  const actions=document.getElementById('actions');
+  const product=document.getElementById('product');
+  const place=document.getElementById('place');
+  const expiry=document.getElementById('expiry');
+  const note=document.getElementById('note');
+
+  function extractUrl(){
+    const params=new URLSearchParams(location.search);
+    const values=[params.get('url'),params.get('text'),params.get('title')].filter(Boolean);
+    for(const value of values){
+      const match=String(value).match(/https:\/\/[^\s<>"']+/i);
+      if(match) return match[0].replace(/[.,;、。\])}]+$/,'');
+    }
+    return '';
+  }
+  async function jsonFetch(url,options){
+    const response=await fetch(url,options);
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(data.error||`通信エラー（${response.status}）`);
+    return data;
+  }
+  function showResult(data,message,isError=false){
+    spinner.hidden=true;
+    status.textContent=message;
+    status.className='status '+(isError?'error':'ok');
+    if(data){
+      product.textContent=data.product||data.name||'—';
+      place.textContent=data.redeemPlace||'—';
+      expiry.textContent=(data.expiresOn||'—').replace(/-/g,'/');
+      detail.hidden=false;
+    }
+    actions.hidden=false;
+  }
+  async function run(){
+    const url=extractUrl();
+    if(!url){showResult(null,'共有されたURLを確認できませんでした。',true);return}
+    if(!MANAGER_API){showResult(null,'自己利用分APIが設定されていません。',true);return}
+    try{
+      status.textContent='商品名・引換先・期限・画像を解析しています...';
+      const analyzed=await jsonFetch(ANALYZER_API,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({url})
+      });
+      product.textContent=analyzed.product;
+      place.textContent=analyzed.redeemPlace;
+      expiry.textContent=analyzed.expiresOn.replace(/-/g,'/');
+      detail.hidden=false;
+      status.textContent='自己利用分へ登録しています...';
+      const registered=await jsonFetch(`${MANAGER_API}/api/coupons/register-auto`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          name:analyzed.product,
+          redeemPlace:analyzed.redeemPlace,
+          expiresOn:analyzed.expiresOn,
+          url,
+          productImageDataUri:analyzed.productImageDataUri||null
+        })
+      });
+      if(registered.newCount>0){
+        showResult(analyzed,'登録しました。');
+        note.textContent=registered.imageSaved?'商品画像も保存しました。':'商品画像を取得できなかったため仮画像で登録しました。';
+      }else{
+        showResult(analyzed,'このURLは登録済みです。');
+        note.textContent='同じURLは追加していません。';
+      }
+      setTimeout(()=>{ location.href='./coupons.html'; },1800);
+    }catch(error){
+      showResult(null,error.message||'登録に失敗しました。',true);
+      note.textContent='解析できないクーポンは、現在の「＋」から手動登録できます。';
+    }
+  }
+  document.getElementById('portalBtn').addEventListener('click',()=>location.href='./');
+  document.getElementById('listBtn').addEventListener('click',()=>location.href='./coupons.html');
+  run();
+})();
+</script>
+</body>
+</html>
