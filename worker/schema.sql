@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS coupons (
   name TEXT NOT NULL,
   name_key TEXT NOT NULL,
   coupon_type TEXT NOT NULL CHECK (coupon_type IN ('url', 'image')),
+  redeem_place TEXT NOT NULL DEFAULT '',
   cover_object_key TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
