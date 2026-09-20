@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v18-coupon-reconcile';
+const CACHE='url-format-shisa-v19-coupon-starbucks';
 const CORE=[
   './',
   './index.html',
