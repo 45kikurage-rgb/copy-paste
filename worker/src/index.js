@@ -1028,11 +1028,14 @@ async function analyzeStarbucksDirectForImport(urlValue) {
   };
 }
 function genericOgValue(html, key) {
-  const safe = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\async function analyzeCouponForImport(urlValue, env) {');
-  const a = String(html || '').match(new RegExp('<meta\\b[^>]*(?:property|name)=["\']' + safe + '["\'][^>]*content=["\']([^"\']+)["\'][^>]*>', 'i'));
-  if (a?.[1]) return decodeHtmlEntities(a[1]);
-  const b = String(html || '').match(new RegExp('<meta\\b[^>]*content=["\']([^"\']+)["\'][^>]*(?:property|name)=["\']' + safe + '["\'][^>]*>', 'i'));
-  return b?.[1] ? decodeHtmlEntities(b[1]) : '';
+  const wanted = String(key || '').toLowerCase();
+  for (const tag of String(html || '').match(/<meta\b[^>]*>/gi) || []) {
+    const name = tag.match(/\b(?:property|name)\s*=\s*(["'])(.*?)\1/i)?.[2]?.toLowerCase();
+    if (name !== wanted) continue;
+    const content = tag.match(/\bcontent\s*=\s*(["'])(.*?)\1/i)?.[2];
+    if (content) return decodeHtmlEntities(content);
+  }
+  return '';
 }
 
 async function fetchKomedaDirectPage(urlValue) {
