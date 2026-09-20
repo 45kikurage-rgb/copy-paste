@@ -2,6 +2,7 @@
   'use strict';
   const AUTH_KEY = 'portal-auth-ok-v1';
   const RESERVATION_KEY = 'coupon-active-reservation-v1';
+  const RECONCILE_SESSION_KEY = 'coupon-url-reconcile-20260921-v1';
   const API_BASE = String(window.COUPON_API_BASE || '').replace(/\/$/, '');
   const isUnconfigured = !API_BASE || API_BASE.includes('YOUR_SUBDOMAIN');
 
@@ -55,6 +56,36 @@
     return type.includes('application/json') ? response.json() : response;
   }
 
+  async function reconcileExistingUrls() {
+    if (sessionStorage.getItem(RECONCILE_SESSION_KEY) === 'done') {
+      return { processed: 0, changed: 0, merged: 0, failed: 0, done: true };
+    }
+
+    let totals = { processed: 0, changed: 0, merged: 0, failed: 0, done: false };
+    for (let round = 0; round < 12; round += 1) {
+      const result = await api('/api/coupons/reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 4 })
+      });
+      totals.processed += Number(result.processed || 0);
+      totals.changed += Number(result.changed || 0);
+      totals.merged += Number(result.merged || 0);
+      totals.failed += Number(result.failed || 0);
+      totals.done = Boolean(result.done);
+
+      const remaining = Number(result.remaining || 0);
+      if (remaining > 0) {
+        setPageStatus(`既存URLを確認中... 残り${remaining}件`);
+      }
+
+      if (result.done || Number(result.processed || 0) === 0) break;
+    }
+
+    if (totals.done) sessionStorage.setItem(RECONCILE_SESSION_KEY, 'done');
+    return totals;
+  }
+
   async function loadCoupons() {
     if (isUnconfigured) {
       setPageStatus('Cloudflare側の設定後にクーポン一覧を利用できます。', true);
@@ -63,9 +94,28 @@
     }
     setPageStatus('読み込み中...');
     try {
+      let reconcileSummary = null;
+      try {
+        setPageStatus('既存URLを確認しています...');
+        reconcileSummary = await reconcileExistingUrls();
+      } catch {
+        // 旧Workerがまだ反映前でも一覧自体は表示する。
+      }
+
       const data = await api('/api/coupons');
       renderCoupons(data.coupons || []);
-      setPageStatus(data.coupons?.length ? '' : '登録済みクーポンはありません。');
+
+      if (reconcileSummary && (reconcileSummary.changed || reconcileSummary.merged)) {
+        const parts = [];
+        if (reconcileSummary.changed) parts.push(`名称整理 ${reconcileSummary.changed}件`);
+        if (reconcileSummary.merged) parts.push(`カード統合 ${reconcileSummary.merged}件`);
+        setPageStatus(parts.join(' / '));
+        setTimeout(() => {
+          if (pageStatus.textContent === parts.join(' / ')) setPageStatus('');
+        }, 2600);
+      } else {
+        setPageStatus(data.coupons?.length ? '' : '登録済みクーポンはありません。');
+      }
     } catch (error) {
       setPageStatus(error.message, true);
       renderCoupons([]);
