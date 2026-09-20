@@ -104,6 +104,10 @@
     const title = document.createElement('h2');
     title.className = 'coupon-name';
     title.textContent = coupon.name;
+    const place = document.createElement('div');
+    place.className = 'coupon-place';
+    place.textContent = coupon.redeemPlace ? `引換先：${coupon.redeemPlace}` : '';
+    place.hidden = !coupon.redeemPlace;
     const meta = document.createElement('div');
     meta.className = 'coupon-meta';
     const type = document.createElement('span');
@@ -139,7 +143,7 @@
     use.textContent = coupon.availableCount ? '利用する' : '予約中';
     use.disabled = !coupon.availableCount || Boolean(activeReservation);
     use.addEventListener('click', () => openReservationChoice(coupon));
-    info.append(title, meta, expiryList, use);
+    info.append(title, place, meta, expiryList, use);
     article.append(image, info);
     return article;
   }
