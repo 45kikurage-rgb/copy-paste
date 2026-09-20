@@ -3,7 +3,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
 const DEFAULT_COUPON_ANALYZER_API = 'https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
 const DEFAULT_COUPON_ANALYZER_BASE = 'https://coupon-capture.45kikurage.workers.dev';
-const URL_RECONCILE_VERSION = '2026-09-21-v4';
+const URL_RECONCILE_VERSION = '2026-09-21-v5';
 
 export default {
   async fetch(request, env) {
@@ -115,6 +115,13 @@ function canonicalCouponNameForStorage(name, redeemPlace = '') {
     const amount = value.normalize('NFKC').match(/(?:税込\s*)?(\d{3,5})\s*円|(?:コメダ(?:コーヒー)?|KOMEDA)\s*(\d{3,5})/i);
     const yen = Number(amount?.[1] || amount?.[2] || 0);
     if (yen > 0) return yen + '円 コメダコーヒー';
+  }
+  if (/ローソン|LAWSON/i.test(value)) {
+    const amount = value.normalize('NFKC').match(/(?:税込\s*)?(\d{3,5})\s*円/);
+    const yen = Number(amount?.[1] || 0);
+    if (yen > 0 && /お買物券|お買い物券|ギフト券|デジタルギフト|ローソン/i.test(value)) {
+      return yen + '円 ローソン';
+    }
   }
   if ((/カフェ|ラテ|コーヒー|飲料|ml|mL/i.test(value)) && /いずれか1点$/.test(value)) {
     value = value.replace(/いずれか1点$/, 'いずれか1本');
@@ -290,6 +297,7 @@ async function countPendingUrlReconcile(env) {
         OR i.url_value LIKE 'https://ncpfa.famima.com/%'
         OR i.url_value LIKE 'https://gift.starbucks.co.jp/%'
         OR i.url_value LIKE 'https://komeda.e-gift.co/%'
+        OR i.url_value LIKE 'https://lawson-i.e-gift.co/%'
       )
       AND s.coupon_id IS NULL
   `).bind(URL_RECONCILE_VERSION).first();
@@ -364,6 +372,7 @@ async function reconcileExistingUrlCoupons(request, env) {
         OR i.url_value LIKE 'https://ncpfa.famima.com/%'
         OR i.url_value LIKE 'https://gift.starbucks.co.jp/%'
         OR i.url_value LIKE 'https://komeda.e-gift.co/%'
+        OR i.url_value LIKE 'https://lawson-i.e-gift.co/%'
       )
       AND s.coupon_id IS NULL
     GROUP BY c.id
@@ -1146,6 +1155,149 @@ async function analyzeKomedaDirectForImport(urlValue) {
     analysisMode: 'direct-komeda'
   };
 }
+function cleanEgiftTitle(value, brandPattern) {
+  let title = decodeHtmlEntities(String(value || '')).normalize('NFKC').replace(/\s+/g, ' ').trim();
+  title = title
+    .replace(/\s*[|｜]\s*(?:eGift|デジタルギフト|ギフト).*$/i, '')
+    .replace(/\s*[-–—]\s*(?:eGift|デジタルギフト|ギフト).*$/i, '')
+    .replace(/\s*[|｜]\s*[^|｜]{0,24}$/i, match => brandPattern.test(match) ? '' : match)
+    .trim();
+  return title;
+}
+
+async function fetchLawsonDirectPage(urlValue) {
+  const original = new URL(urlValue);
+  let current = new URL(original.origin + original.pathname);
+  for (let redirect = 0; redirect <= 4; redirect += 1) {
+    if (current.protocol !== 'https:' || current.hostname !== 'lawson-i.e-gift.co' || !/^\/c\/[A-Za-z0-9_-]{6,200}\/\d{1,8}\/?$/.test(current.pathname)) {
+      throw new HttpError(422, 'ローソン公式eGift以外へ転送されたため停止しました。');
+    }
+    let response;
+    try {
+      response = await fetch(current, {
+        redirect: 'manual',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'ja,en;q=0.8',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36'
+        }
+      });
+    } catch {
+      throw new HttpError(502, 'ローソンeGiftページに接続できませんでした。');
+    }
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) throw new HttpError(422, 'ローソンeGiftの転送先を確認できませんでした。');
+      current = new URL(location, current);
+      continue;
+    }
+    if (!response.ok) throw new HttpError(502, 'ローソンeGiftのページ取得エラー（' + response.status + '）');
+    return { html: await readResponseText(response, 2500000), current };
+  }
+  throw new HttpError(422, 'ローソンeGiftの転送回数が多すぎます。');
+}
+
+function lawsonProductFromPage(html, text) {
+  const ogTitle = genericOgValue(html, 'og:title');
+  const titleTag = String(html || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
+  const rawTitle = ogTitle || titleTag;
+  let title = cleanEgiftTitle(rawTitle, /ローソン|LAWSON/i);
+
+  const normalized = (String(text || '') + '\n' + decodeHtmlEntities(String(html || ''))).normalize('NFKC');
+  const amountMatch = normalized.match(/(?:税込\s*)?([1-9]\d{2,4})\s*円/);
+  const amount = Number(amountMatch?.[1] || 0);
+
+  if (!title || /^(?:ローソン|LAWSON|eGift|ギフト)$/i.test(title)) {
+    if (amount) return { product: amount + '円 ローソン', amount };
+    return { product: 'ローソン eGift', amount: 0 };
+  }
+
+  if (amount && /お買物券|お買い物券|ギフト券|デジタルギフト|ギフト/i.test(title)) {
+    return { product: amount + '円 ローソン', amount };
+  }
+
+  title = title
+    .replace(/\s*ローソン\s*$/i, '')
+    .replace(/^ローソン\s*/i, '')
+    .trim();
+
+  return { product: title || (amount ? amount + '円 ローソン' : 'ローソン eGift'), amount };
+}
+
+async function fetchLawsonCover(html, current, amount) {
+  const sources = [];
+  const ogImage = genericOgValue(html, 'og:image');
+  if (ogImage) sources.push({ source: ogImage, score: 1000, og: true });
+
+  for (const item of htmlImageDescriptors(html)) {
+    const label = (item.source + ' ' + item.alt).normalize('NFKC');
+    let score = 0;
+    if (/gift|ticket|coupon|ローソン|lawson/i.test(label)) score += 800;
+    if (amount && new RegExp('(?:^|[^0-9])' + amount + '(?:[^0-9]|$)').test(label)) score += 1000;
+    if (/logo|icon|arrow|qr|barcode/i.test(label)) score -= 2500;
+    if (score > 0) sources.push({ source: item.source, score, og: false });
+  }
+
+  sources.sort((a,b)=>b.score-a.score);
+  const seen = new Set();
+  let best = null;
+
+  for (const entry of sources.slice(0,10)) {
+    let url;
+    try { url = new URL(entry.source, current); } catch { continue; }
+    if (url.protocol !== 'https:' || seen.has(url.href)) continue;
+    seen.add(url.href);
+
+    if (!/(^|\.)e-gift\.co$/i.test(url.hostname) && url.hostname !== 'lawson-i.e-gift.co' && !entry.og) continue;
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Accept': 'image/png,image/jpeg,image/webp,image/*',
+          'Referer': current.toString(),
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36'
+        }
+      });
+      if (!response.ok) continue;
+      const contentType = (response.headers.get('content-type') || '').split(';',1)[0].toLowerCase().replace('image/jpg','image/jpeg');
+      if (!/^image\/(?:png|jpeg|webp)$/.test(contentType)) continue;
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) continue;
+      const weighted = entry.score + Math.min(bytes.length,2500000)/700;
+      if (!best || weighted > best.weighted) best = { bytes, contentType, weighted };
+    } catch {}
+  }
+
+  if (!best) return null;
+  let binary='';
+  for(let i=0;i<best.bytes.length;i+=32768) binary += String.fromCharCode(...best.bytes.subarray(i,i+32768));
+  return 'data:' + best.contentType + ';base64,' + btoa(binary);
+}
+
+async function analyzeLawsonDirectForImport(urlValue) {
+  const parsed = new URL(urlValue);
+  if (parsed.hostname !== 'lawson-i.e-gift.co' || !/^\/c\/[A-Za-z0-9_-]{6,200}\/\d{1,8}\/?$/.test(parsed.pathname)) return null;
+
+  const page = await fetchLawsonDirectPage(urlValue);
+  const text = htmlVisibleLines(page.html).join('\n').normalize('NFKC');
+  const item = lawsonProductFromPage(page.html, text);
+  const expiresOn = extractLatestIsoDate(text + '\n' + decodeHtmlEntities(page.html));
+
+  if (!item.product) throw new HttpError(422, 'ローソンeGiftの商品名を読み取れませんでした。');
+  if (!expiresOn) throw new HttpError(422, 'ローソンeGiftの有効期限を読み取れませんでした。');
+
+  return {
+    product: item.product,
+    redeemPlace: 'ローソン',
+    merchant: 'ローソン',
+    expiresOn,
+    productImageDataUri: await fetchLawsonCover(page.html, page.current, item.amount),
+    site: 'lawson',
+    status: 'ok',
+    analysisMode: 'direct-lawson'
+  };
+}
+
 async function analyzeCouponForImport(urlValue, env) {
   const directSeven = await analyzeSevenDirectForImport(urlValue);
   if (directSeven) return directSeven;
@@ -1155,6 +1307,9 @@ async function analyzeCouponForImport(urlValue, env) {
 
   const directKomeda = await analyzeKomedaDirectForImport(urlValue);
   if (directKomeda) return directKomeda;
+
+  const directLawson = await analyzeLawsonDirectForImport(urlValue);
+  if (directLawson) return directLawson;
 
   const detailApi = String(env.COUPON_ANALYZER_API || DEFAULT_COUPON_ANALYZER_API).trim();
   const detail = await fetchAnalyzerJson(detailApi, { url: urlValue });
