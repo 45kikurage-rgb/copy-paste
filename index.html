@@ -63,13 +63,13 @@ h1{margin:0;font-size:1.18rem;font-weight:700;letter-spacing:.02em}
   overflow:hidden;
 }
 .result-card{
-  flex:none;
-  height:clamp(180px,27dvh,260px);
+  flex:1;
+  min-height:125px;
   grid-template-rows:auto minmax(0,1fr);
 }
 .input-card{
-  flex:1;
-  min-height:125px;
+  flex:none;
+  height:clamp(180px,27dvh,260px);
   grid-template-rows:auto minmax(0,1fr);
 }
 .section-head{display:flex;align-items:flex-start;justify-content:space-between;min-height:30px;gap:8px}
@@ -684,6 +684,20 @@ textarea::placeholder{color:#9b8f84;opacity:1}
     <textarea id="output" readonly placeholder="貼り付けた文字列の&#10;段落ごとに改行を追加する"></textarea>
   </section>
 
+  <section class="card line-encode-card" aria-label="LINEエンコード">
+    <div class="line-encode-top">
+      <div class="line-encode-title">▶LINEエンコード</div>
+      <label class="line-encode-label" for="lineOfficialId">公式LINE</label>
+      <input class="line-encode-input" id="lineOfficialId" type="text" inputmode="text" autocomplete="off" placeholder="@ID">
+      <label class="line-encode-label" for="lineMessage">メッセージ</label>
+      <input class="line-encode-input" id="lineMessage" type="text" autocomplete="off" placeholder="送りたい文字列">
+    </div>
+    <div class="line-encode-bottom">
+      <input class="line-encode-output" id="lineEncodedUrl" type="text" readonly aria-label="作成したLINE URL" placeholder="作成したURLを表示">
+      <button class="line-encode-copy" id="lineEncodeCopyBtn" type="button">コピー</button>
+    </div>
+  </section>
+
   <div class="action-strip">
     <button class="action-btn calc-open-btn" id="openCalcBtn" type="button" aria-label="計算表を開く">
       <span class="calculator-glyph action" aria-hidden="true"><span></span><i></i><i></i><i></i><i></i><i></i><i></i></span>
@@ -706,19 +720,6 @@ textarea::placeholder{color:#9b8f84;opacity:1}
     <textarea id="input" placeholder="1&#10;https://example.com/aaa&#10;2&#10;https://example.com/bbb"></textarea>
   </section>
 
-  <section class="card line-encode-card" aria-label="LINEエンコード">
-    <div class="line-encode-top">
-      <div class="line-encode-title">▶LINEエンコード</div>
-      <label class="line-encode-label" for="lineOfficialId">公式LINE</label>
-      <input class="line-encode-input" id="lineOfficialId" type="text" inputmode="text" autocomplete="off" placeholder="@ID">
-      <label class="line-encode-label" for="lineMessage">メッセージ</label>
-      <input class="line-encode-input" id="lineMessage" type="text" autocomplete="off" placeholder="送りたい文字列">
-    </div>
-    <div class="line-encode-bottom">
-      <input class="line-encode-output" id="lineEncodedUrl" type="text" readonly aria-label="作成したLINE URL" placeholder="作成したURLを表示">
-      <button class="line-encode-copy" id="lineEncodeCopyBtn" type="button">コピー</button>
-    </div>
-  </section>
 </main>
 
 <nav class="quick-links" aria-label="固定リンク">
