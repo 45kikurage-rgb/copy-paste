@@ -39,7 +39,7 @@ function defaultState(){
     formats: [blankFormat(1), blankFormat(2), blankFormat(3)],
     history: [],
     pageRules: [],
-    settings: { trialMode: true },
+    settings: { trialMode: true, defaultFormatsSeeded: true },
     activeJob: null
   };
 }
@@ -49,12 +49,30 @@ function loadState(){
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return defaultState();
     const parsed = JSON.parse(raw);
+    const settings = Object.assign({trialMode:true, defaultFormatsSeeded:false}, parsed.settings || {});
+    let formats = Array.isArray(parsed.formats) ? parsed.formats : [];
+    // v1初期公開時に空配列で保存された端末だけ、初回1回に限り
+    // フォーマット1〜3を自動作成する。以後ユーザーが全削除しても復活させない。
+    if(!settings.defaultFormatsSeeded && formats.length === 0){
+      formats = [blankFormat(1), blankFormat(2), blankFormat(3)];
+      settings.defaultFormatsSeeded = true;
+      try{
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          version: VERSION,
+          formats,
+          history: Array.isArray(parsed.history) ? parsed.history : [],
+          pageRules: Array.isArray(parsed.pageRules) ? parsed.pageRules : [],
+          settings,
+          activeJob: parsed.activeJob || null
+        }));
+      }catch(_){}
+    }
     return {
       version: VERSION,
-      formats: Array.isArray(parsed.formats) ? parsed.formats : [],
+      formats,
       history: Array.isArray(parsed.history) ? parsed.history : [],
       pageRules: Array.isArray(parsed.pageRules) ? parsed.pageRules : [],
-      settings: Object.assign({trialMode:true}, parsed.settings || {}),
+      settings,
       activeJob: parsed.activeJob || null
     };
   }catch(error){
