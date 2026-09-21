@@ -309,19 +309,30 @@ function startEntry(formatId, rawUrl){
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 
-  emitHelper('START_ENTRY',{
+  const helperPayload = {
     jobId: state.activeJob.id,
     url: url.href,
-    format: publicFormat(format),
+    formatId: format.id,
+    formatLabel: format.label,
     trialMode: !!state.settings.trialMode,
+    profile: publicFormat(format)
+  };
+
+  emitHelper('START_ENTRY',{
+    ...helperPayload,
+    format: publicFormat(format),
     pageRules: state.pageRules.map(r => ({fingerprint:r.fingerprint}))
   });
 
   if(isHelperConnected()){
     showToast('Helperへ開始指示を送りました');
   }else{
-    window.open(url.href, '_blank', 'noopener');
-    showToast('URLを開きました。自動入力にはAndroid Helperが必要です');
+    const intentUrl =
+      'intent://start?data=' + encodeURIComponent(JSON.stringify(helperPayload)) +
+      '#Intent;scheme=entrymanager;package=com.example.actionrecorder;' +
+      'S.browser_fallback_url=' + encodeURIComponent(url.href) + ';end';
+    window.location.href = intentUrl;
+    showToast('動作記録アプリへ入力補助を渡します');
   }
 }
 
@@ -705,6 +716,48 @@ async function makePageFingerprint(descriptor){
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
+function applyHelperCompletionFromUrl(){
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('helperComplete');
+  if(!raw) return;
+  try{
+    const payload = JSON.parse(raw);
+    const jobId = payload.jobId || '';
+    if(payload.updateFormat && payload.profile && payload.formatId){
+      const format = state.formats.find(f => f.id === payload.formatId);
+      if(format){
+        const allowed = ['lastName','firstName','lastKana','firstKana','postalCode','prefecture','city','street','building','phone','email','memo'];
+        allowed.forEach(key => {
+          if(Object.prototype.hasOwnProperty.call(payload.profile,key)) format[key] = String(payload.profile[key] ?? '');
+        });
+        format.updatedAt = nowIso();
+      }
+    }
+    if(jobId && !state.history.some(h => h.jobId === jobId)){
+      state.history.push({
+        id: uid('hist'),
+        jobId,
+        campaignName: payload.campaignName || 'キャンペーン',
+        url: payload.url || (state.activeJob && state.activeJob.url) || '',
+        formatId: payload.formatId || (state.activeJob && state.activeJob.formatId) || '',
+        formatLabel: payload.formatLabel || (state.activeJob && state.activeJob.formatLabel) || '',
+        email: payload.email || '',
+        completedAt: payload.completedAt || nowIso(),
+        memo: ''
+      });
+    }
+    if(!state.activeJob || !jobId || state.activeJob.id === jobId) state.activeJob = null;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('helperComplete');
+    history.replaceState(null,'',clean.pathname + clean.search + clean.hash);
+    showToast('応募完了を履歴に登録しました');
+  }catch(error){
+    console.error('helperComplete parse failed', error);
+    showToast('Helper完了データの反映に失敗しました');
+  }
+}
+
 function onHelperMessage(data){
   if(!data || typeof data !== 'object') return;
   const type = data.type;
@@ -791,5 +844,6 @@ window.addEventListener('load', () => {
   }
 });
 
+applyHelperCompletionFromUrl();
 renderAll();
 updateHelperStatus();
