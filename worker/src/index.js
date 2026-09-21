@@ -1,7 +1,9 @@
 const RESERVATION_SECONDS = 10 * 60;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
-const URL_RECONCILE_VERSION = '2026-09-21-v7-shared-analyzer';
+const DEFAULT_COUPON_ANALYZER_API = 'https://coupon-capture.45kikurage.workers.dev/api/analyze-detail';
+const DEFAULT_COUPON_ANALYZER_BASE = 'https://coupon-capture.45kikurage.workers.dev';
+const URL_RECONCILE_VERSION = '2026-09-21-v6';
 
 export default {
   async fetch(request, env) {
@@ -500,17 +502,20 @@ function decodeImageDataUri(value) {
   return { bytes, mimeType: match[1] };
 }
 
-async function fetchAnalyzerJson(env, path, body) {
-  if (!env.COUPON_ANALYZER || typeof env.COUPON_ANALYZER.fetch !== 'function') {
-    return { ok: false, status: 503, data: { error: '共通クーポン解析APIが接続されていません。' }, networkError: true };
-  }
+function analyzerBaseFromEnv(env) {
+  const configured = String(env.COUPON_ANALYZER_API || '').trim().replace(/\/$/, '');
+  if (!configured) return DEFAULT_COUPON_ANALYZER_BASE;
+  return configured.replace(/\/api\/(?:analyze-detail|analyze|capture-one)$/, '');
+}
+
+async function fetchAnalyzerJson(url, body) {
   let response;
   try {
-    response = await env.COUPON_ANALYZER.fetch(new Request(`https://coupon-analyzer-api.internal${path}`, {
+    response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(body)
-    }));
+    });
   } catch {
     return { ok: false, status: 0, data: {}, networkError: true };
   }
@@ -597,8 +602,10 @@ function extractCouponTitleFromSvg(svg) {
 }
 
 async function analyzeCouponLegacy(urlValue, env) {
+  const base = analyzerBaseFromEnv(env);
+
   // 食品クーポンは容量表記が無いことがあるため、まずcapture-oneのタイトル/期間から判定する。
-  const capture = await fetchAnalyzerJson(env, '/api/capture-one', { url: urlValue, mode: 'fast' });
+  const capture = await fetchAnalyzerJson(`${base}/api/capture-one`, { url: urlValue, mode: 'fast' });
   if (capture.ok && capture.data) {
     const svg = capture.data.base64 ? decodeBase64Text(capture.data.base64) : '';
     const product = String(capture.data.product || capture.data.title || extractCouponTitleFromSvg(svg)).trim();
@@ -620,7 +627,7 @@ async function analyzeCouponLegacy(urlValue, env) {
   }
 
   // capture-oneで取れないケースのみ従来の分析APIへ。
-  const analysis = await fetchAnalyzerJson(env, '/api/analyze', { items: [{ label: '1', url: urlValue }], mode: 'stable' });
+  const analysis = await fetchAnalyzerJson(`${base}/api/analyze`, { items: [{ label: '1', url: urlValue }] });
   if (!analysis.ok) {
     throw new HttpError(502, analysis.data.error || analysis.data.message || '既存のクーポン解析APIでも解析できませんでした。');
   }
@@ -1434,14 +1441,39 @@ async function analyzeMisterDonutDirectForImport(urlValue) {
 }
 
 async function analyzeCouponForImport(urlValue, env) {
-  const detail = await fetchAnalyzerJson(env, '/api/analyze-detail', { url: urlValue, mode: 'stable' });
-  if (detail.ok && detail.data?.status === 'ok') {
-    return { ...detail.data, analysisMode: 'shared-analyzer' };
-  }
+  const directSeven = await analyzeSevenDirectForImport(urlValue);
+  if (directSeven) return directSeven;
 
-  const message = detail.data?.error || detail.data?.message || 'クーポン解析に失敗しました。';
-  if (detail.data?.status === 'used') throw new HttpError(422, 'このクーポンは利用済みです。');
-  throw new HttpError(detail.status >= 400 && detail.status < 500 ? 422 : 502, message);
+  const directStarbucks = await analyzeStarbucksDirectForImport(urlValue);
+  if (directStarbucks) return directStarbucks;
+
+  const directKomeda = await analyzeKomedaDirectForImport(urlValue);
+  if (directKomeda) return directKomeda;
+
+  const directLawson = await analyzeLawsonDirectForImport(urlValue);
+  if (directLawson) return directLawson;
+
+  const directMisterDonut = await analyzeMisterDonutDirectForImport(urlValue);
+  if (directMisterDonut) return directMisterDonut;
+
+  const detailApi = String(env.COUPON_ANALYZER_API || DEFAULT_COUPON_ANALYZER_API).trim();
+  const detail = await fetchAnalyzerJson(detailApi, { url: urlValue });
+  if (detail.ok && detail.data?.status === 'ok') return { ...detail.data, analysisMode: 'detail' };
+
+  // 本番Workerがまだ /api/analyze-detail 未反映の場合や、詳細解析だけ失敗した場合は
+  // 既存の /api/analyze + /api/capture-one へ自動フォールバックする。
+  try {
+    return await analyzeCouponLegacy(urlValue, env);
+  } catch (legacyError) {
+    const detailMessage = detail.data?.error || detail.data?.message || '';
+    if (legacyError instanceof HttpError) {
+      if (detailMessage && !/Not found|API|見つかりません/i.test(detailMessage)) {
+        throw new HttpError(legacyError.status, `${detailMessage} / ${legacyError.message}`);
+      }
+      throw legacyError;
+    }
+    throw new HttpError(502, detailMessage || 'クーポン解析に失敗しました。');
+  }
 }
 
 async function deleteCoupon(request, env, couponId) {
