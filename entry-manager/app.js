@@ -741,19 +741,10 @@ $('reviewCancelBtn').addEventListener('click', () => closeInputReview('cancel'))
 $('reviewNoChangeBtn').addEventListener('click', () => closeInputReview('unchanged'));
 $('reviewChangedBtn').addEventListener('click', () => {
   if(!reviewChanged()){
-    showToast('変更はありません。「変更無しで進む」を使用できます');
+    showToast('変更はありません。「変更無しで進む」を使用してください');
     return;
   }
-  $('updateFormatWrap').classList.remove('hidden');
-  if($('updateFormatWrap').dataset.ready === 'true'){
-    closeInputReview('changed');
-  }else{
-    $('updateFormatWrap').dataset.ready = 'true';
-    showToast('必要なら「フォーマットも変更」にチェックして、もう一度「変更して進む」を押してください');
-  }
-});
-$('inputReviewDialog').addEventListener('close', () => {
-  $('updateFormatWrap').dataset.ready = 'false';
+  closeInputReview('changed');
 });
 
 $('actionCancelBtn').addEventListener('click', cancelActionReview);
