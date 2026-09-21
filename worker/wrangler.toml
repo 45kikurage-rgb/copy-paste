@@ -11,10 +11,6 @@ database_id = "68350df5-8fad-43fe-94b7-9ebf6ca8d37d"
 binding = "COUPON_IMAGES"
 bucket_name = "coupon-images"
 
-[[services]]
-binding = "COUPON_ANALYZER"
-service = "coupon-analyzer-api"
-
 [vars]
 ALLOWED_ORIGINS = "https://45kikurage-rgb.github.io"
 
