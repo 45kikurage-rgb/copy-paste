@@ -1,6 +1,6 @@
 'use strict';
 
-const STORAGE_KEY = 'entry-manager-state-v1';
+const STORAGE_KEY = 'entry-manager-state-v2';
 const VERSION = 1;
 let state = loadState();
 let reviewContext = null;
@@ -781,7 +781,7 @@ window.addEventListener('load', () => {
   renderAll();
   updateHelperStatus();
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js?v=20260921-3').catch(console.error);
+    navigator.serviceWorker.register('./sw.js?v=20260922-1').catch(console.error);
   }
 });
 
