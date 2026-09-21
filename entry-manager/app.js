@@ -111,6 +111,12 @@ function showToast(message){
 }
 
 function renderAll(){
+  // Entryマネージャーは最低3つの初期フォーマットを持つ。
+  // 旧版で0件状態が保存されていても、画面描画前に復旧する。
+  if(!Array.isArray(state.formats) || state.formats.length === 0){
+    state.formats = [blankFormat(1), blankFormat(2), blankFormat(3)];
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(_){}
+  }
   renderFormats();
   renderHistory();
   renderRules();
@@ -781,7 +787,7 @@ window.addEventListener('load', () => {
   renderAll();
   updateHelperStatus();
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js?v=20260922-1').catch(console.error);
+    navigator.serviceWorker.register('./sw.js?v=20260922-2').catch(console.error);
   }
 });
 
