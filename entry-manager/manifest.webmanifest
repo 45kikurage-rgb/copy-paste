@@ -1,0 +1,19 @@
+{
+  "name": "Entryマネージャー",
+  "short_name": "Entry管理",
+  "description": "入力フォーマットとキャンペーン応募履歴を端末内で管理する入力補助サイト",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#070707",
+  "theme_color": "#0b0b0b",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

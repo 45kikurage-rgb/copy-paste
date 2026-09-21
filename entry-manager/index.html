@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0b">
+  <title>Entryマネージャー</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css?v=20260921-1">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ENTRY MANAGEMENT</p>
+      <h1>Entryマネージャー</h1>
+    </div>
+    <span id="trialBadge" class="badge">試用期間</span>
+  </header>
+
+  <main class="shell">
+    <section id="view-main" class="view active" data-view="main">
+      <div class="hero card">
+        <div>
+          <p class="muted">入力補助・応募履歴を端末内で管理</p>
+          <h2>入力フォーマットから開始</h2>
+        </div>
+        <div class="heroStats">
+          <div><strong id="statFormats">0</strong><span>フォーマット</span></div>
+          <div><strong id="statHistory">0</strong><span>応募完了</span></div>
+          <div><strong id="statRules">0</strong><span>確認省略</span></div>
+        </div>
+      </div>
+
+      <div class="sectionHead">
+        <div>
+          <p class="eyebrow">FORMATS</p>
+          <h2>入力フォーマット</h2>
+        </div>
+        <button id="addFormatBtn" class="secondaryBtn" type="button">＋ 追加</button>
+      </div>
+
+      <div id="formatList" class="stack"></div>
+    </section>
+
+    <section id="view-history" class="view" data-view="history">
+      <div class="sectionHead">
+        <div>
+          <p class="eyebrow">HISTORY</p>
+          <h2>キャンペーン履歴</h2>
+        </div>
+      </div>
+      <div class="card notice">
+        履歴は「応募完了」と確認できた時だけ登録します。途中操作や確認画面まででは応募完了にしません。
+      </div>
+      <div id="historyList" class="stack"></div>
+    </section>
+
+    <section id="view-settings" class="view" data-view="settings">
+      <div class="sectionHead">
+        <div>
+          <p class="eyebrow">SETTINGS</p>
+          <h2>設定・バックアップ</h2>
+        </div>
+      </div>
+
+      <div class="card settingsCard">
+        <h3>試用期間の確認設定</h3>
+        <label class="switchRow">
+          <div>
+            <strong>すべてのページ遷移ボタンを確認</strong>
+            <span>試用期間中はONを推奨</span>
+          </div>
+          <input id="trialModeToggle" type="checkbox">
+        </label>
+      </div>
+
+      <div class="card settingsCard">
+        <h3>端末変更用CSV</h3>
+        <p class="muted">フォーマット、応募完了履歴、確認不要ページ設定をCSVで移行できます。</p>
+        <div class="buttonGrid">
+          <button id="exportCsvBtn" class="primaryBtn" type="button">CSVを書き出す</button>
+          <label class="secondaryBtn fileBtn">CSVを読み込む<input id="importCsvInput" type="file" accept=".csv,text/csv"></label>
+        </div>
+        <p class="warning">CSVには氏名・住所・電話番号・メールアドレスが含まれます。</p>
+      </div>
+
+      <div class="card settingsCard">
+        <div class="rowBetween">
+          <h3>確認不要ページ</h3>
+          <span id="ruleCount" class="smallPill">0件</span>
+        </div>
+        <div id="pageRuleList" class="stack compact"></div>
+      </div>
+
+      <div class="card settingsCard">
+        <h3>Helper連携</h3>
+        <p id="helperStatus" class="muted">接続確認中…</p>
+        <p class="tiny">Webサイト単体では別ドメインの入力欄やボタンを操作できないため、外部ページの自動入力・画面切り出しはAndroid Helperが担当します。</p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottomNav" aria-label="メインメニュー">
+    <button class="navBtn active" data-target="main" type="button"><span>⌂</span><small>メイン</small></button>
+    <button class="navBtn" data-target="history" type="button"><span>✓</span><small>履歴</small></button>
+    <button class="navBtn" data-target="settings" type="button"><span>⚙</span><small>設定</small></button>
+  </nav>
+
+  <dialog id="formatDialog" class="dialog">
+    <form id="formatForm" method="dialog">
+      <div class="dialogHead">
+        <div>
+          <p class="eyebrow">FORMAT</p>
+          <h2 id="formatDialogTitle">フォーマット編集</h2>
+        </div>
+        <button class="iconBtn" value="cancel" type="submit">×</button>
+      </div>
+      <input id="formatId" type="hidden">
+      <div class="formGrid">
+        <label>表示名<input id="formatLabel" required placeholder="フォーマット1"></label>
+        <label>姓<input id="lastName" autocomplete="family-name"></label>
+        <label>名<input id="firstName" autocomplete="given-name"></label>
+        <label>セイ<input id="lastKana"></label>
+        <label>メイ<input id="firstKana"></label>
+        <label>郵便番号<input id="postalCode" inputmode="numeric" autocomplete="postal-code"></label>
+        <label>都道府県<input id="prefecture" autocomplete="address-level1"></label>
+        <label class="span2">市区町村<input id="city" autocomplete="address-level2"></label>
+        <label class="span2">丁目・番地<input id="street" autocomplete="street-address"></label>
+        <label class="span2">建物名・部屋番号<input id="building"></label>
+        <label>電話番号<input id="phone" inputmode="tel" autocomplete="tel"></label>
+        <label>メールアドレス<input id="email" inputmode="email" autocomplete="email"></label>
+        <label class="span2">メモ<textarea id="formatMemo" rows="2"></textarea></label>
+      </div>
+      <div class="dialogActions">
+        <button id="deleteFormatBtn" class="dangerBtn" type="button">削除</button>
+        <button class="primaryBtn" value="default" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="inputReviewDialog" class="dialog">
+    <form id="inputReviewForm" method="dialog">
+      <div class="dialogHead">
+        <div>
+          <p class="eyebrow">INPUT REVIEW</p>
+          <h2>入力内容の確認</h2>
+        </div>
+      </div>
+      <div id="reviewCampaign" class="campaignTitle"></div>
+      <div id="reviewFields" class="reviewFields"></div>
+      <label id="updateFormatWrap" class="checkRow">
+        <input id="updateFormatCheck" type="checkbox">
+        <span>フォーマットも変更</span>
+      </label>
+      <div class="threeActions">
+        <button id="reviewCancelBtn" class="ghostBtn" type="button">キャンセル</button>
+        <button id="reviewNoChangeBtn" class="secondaryBtn" type="button">変更無しで進む</button>
+        <button id="reviewChangedBtn" class="primaryBtn" type="button">変更して進む</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="actionReviewDialog" class="dialog">
+    <form method="dialog">
+      <div class="dialogHead">
+        <div>
+          <p class="eyebrow">ACTION REVIEW</p>
+          <h2>次の操作を確認</h2>
+        </div>
+      </div>
+      <div id="actionCampaign" class="campaignTitle"></div>
+      <div id="actionShotWrap" class="screenShotWrap hidden">
+        <img id="actionShot" alt="ボタン周辺の画面切り出し">
+      </div>
+      <div class="actionLabel">
+        <span>押下候補</span>
+        <strong id="actionButtonText">次へ</strong>
+      </div>
+      <label class="checkRow">
+        <input id="completionCheck" type="checkbox">
+        <span>この操作で応募完了</span>
+      </label>
+      <label class="checkRow">
+        <input id="skipPageCheck" type="checkbox">
+        <span>次回以降このサイト・ページ形式では確認不要</span>
+      </label>
+      <div class="twoActions">
+        <button id="actionCancelBtn" class="ghostBtn" type="button">キャンセル</button>
+        <button id="actionApproveBtn" class="primaryBtn" type="button">承諾して押す</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="completionFallbackDialog" class="dialog smallDialog">
+    <form method="dialog">
+      <div class="dialogHead">
+        <div>
+          <p class="eyebrow">COMPLETE</p>
+          <h2>応募完了を確認</h2>
+        </div>
+      </div>
+      <p>応募完了画面を自動確認できませんでした。この応募は完了しましたか？</p>
+      <div class="twoActions">
+        <button id="notCompleteBtn" class="ghostBtn" type="button">まだ完了していない</button>
+        <button id="forceCompleteBtn" class="primaryBtn" type="button">完了として記録</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js?v=20260921-1"></script>
+</body>
+</html>
