@@ -51,12 +51,14 @@ function loadState(){
     const parsed = JSON.parse(raw);
     const settings = Object.assign({trialMode:true, defaultFormatsSeeded:false}, parsed.settings || {});
     let formats = Array.isArray(parsed.formats) ? parsed.formats : [];
-    // v1初期公開時に空配列で保存された端末だけ、初回1回に限り
-    // フォーマット1〜3を自動作成する。以後ユーザーが全削除しても復活させない。
-    if(!settings.defaultFormatsSeeded && formats.length === 0){
+    // 初期公開版で空のformatsが保存された端末向けの一度限りの移行。
+    // settings値に依存せず専用マイグレーションキーで判定する。
+    const seedMigrationKey = 'entry-manager-seed-formats-v3';
+    if(formats.length === 0 && localStorage.getItem(seedMigrationKey) !== '1'){
       formats = [blankFormat(1), blankFormat(2), blankFormat(3)];
       settings.defaultFormatsSeeded = true;
       try{
+        localStorage.setItem(seedMigrationKey, '1');
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
           version: VERSION,
           formats,
@@ -779,7 +781,7 @@ window.addEventListener('load', () => {
   renderAll();
   updateHelperStatus();
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js?v=20260921-1').catch(console.error);
+    navigator.serviceWorker.register('./sw.js?v=20260921-3').catch(console.error);
   }
 });
 
