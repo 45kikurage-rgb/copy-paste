@@ -7,12 +7,12 @@
   <title>Entryマネージャー</title>
   
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css?v=live-2">
+  <link rel="stylesheet" href="./styles.css?v=live-3">
 </head>
 <body>
   <header class="topbar">
     <div>
-      <p class="eyebrow">ENTRY MANAGEMENT <span style="opacity:.55">BUILD 20260922-0208</span></p>
+      <p class="eyebrow">ENTRY MANAGEMENT <span style="opacity:.55">BUILD 20260922-0212</span></p>
       <h1>Entryマネージャー</h1>
     </div>
     <span id="trialBadge" class="badge">試用期間</span>
@@ -214,7 +214,6 @@
 
 const STORAGE_KEY = 'entry-manager-live-state-v2';
 const VERSION = 1;
-let state = loadState();
 let reviewContext = null;
 let actionContext = null;
 let completionContext = null;
@@ -223,6 +222,7 @@ let toastTimer = null;
 const $ = (id) => document.getElementById(id);
 const nowIso = () => new Date().toISOString();
 const uid = (prefix) => prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+let state = loadState();
 
 function blankFormat(n){
   return {
