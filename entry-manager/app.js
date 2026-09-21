@@ -39,7 +39,7 @@ function defaultState(){
     formats: [blankFormat(1), blankFormat(2), blankFormat(3)],
     history: [],
     pageRules: [],
-    settings: { trialMode: true },
+    settings: { trialMode: true, defaultFormatsSeeded: true },
     activeJob: null
   };
 }
@@ -49,12 +49,32 @@ function loadState(){
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return defaultState();
     const parsed = JSON.parse(raw);
+    const settings = Object.assign({trialMode:true, defaultFormatsSeeded:false}, parsed.settings || {});
+    let formats = Array.isArray(parsed.formats) ? parsed.formats : [];
+    // 初期公開版で空のformatsが保存された端末向けの一度限りの移行。
+    // settings値に依存せず専用マイグレーションキーで判定する。
+    const seedMigrationKey = 'entry-manager-seed-formats-v3';
+    if(formats.length === 0 && localStorage.getItem(seedMigrationKey) !== '1'){
+      formats = [blankFormat(1), blankFormat(2), blankFormat(3)];
+      settings.defaultFormatsSeeded = true;
+      try{
+        localStorage.setItem(seedMigrationKey, '1');
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          version: VERSION,
+          formats,
+          history: Array.isArray(parsed.history) ? parsed.history : [],
+          pageRules: Array.isArray(parsed.pageRules) ? parsed.pageRules : [],
+          settings,
+          activeJob: parsed.activeJob || null
+        }));
+      }catch(_){}
+    }
     return {
       version: VERSION,
-      formats: Array.isArray(parsed.formats) ? parsed.formats : [],
+      formats,
       history: Array.isArray(parsed.history) ? parsed.history : [],
       pageRules: Array.isArray(parsed.pageRules) ? parsed.pageRules : [],
-      settings: Object.assign({trialMode:true}, parsed.settings || {}),
+      settings,
       activeJob: parsed.activeJob || null
     };
   }catch(error){
@@ -761,7 +781,7 @@ window.addEventListener('load', () => {
   renderAll();
   updateHelperStatus();
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js?v=20260921-1').catch(console.error);
+    navigator.serviceWorker.register('./sw.js?v=20260921-3').catch(console.error);
   }
 });
 
