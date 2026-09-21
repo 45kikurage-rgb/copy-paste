@@ -2,7 +2,6 @@
 
 const STORAGE_KEY = 'entry-manager-state-v2';
 const VERSION = 1;
-let state = loadState();
 let reviewContext = null;
 let actionContext = null;
 let completionContext = null;
@@ -11,6 +10,7 @@ let toastTimer = null;
 const $ = (id) => document.getElementById(id);
 const nowIso = () => new Date().toISOString();
 const uid = (prefix) => prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+let state = loadState();
 
 function blankFormat(n){
   return {
@@ -787,7 +787,7 @@ window.addEventListener('load', () => {
   renderAll();
   updateHelperStatus();
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js?v=20260922-2').catch(console.error);
+    navigator.serviceWorker.register('./sw.js?v=20260922-3').catch(console.error);
   }
 });
 
