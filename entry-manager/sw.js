@@ -1,9 +1,9 @@
-const CACHE = 'entry-manager-20260921-2';
+const CACHE = 'entry-manager-20260921-3';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=20260921-2',
-  './app.js?v=20260921-2',
+  './styles.css?v=20260921-3',
+  './app.js?v=20260921-3',
   './manifest.webmanifest',
   './icon.svg'
 ];
