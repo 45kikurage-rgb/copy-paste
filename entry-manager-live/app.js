@@ -282,6 +282,18 @@ function saveFormatFromDialog(){
     showToast('表示名を入力してください');
     return false;
   }
+  if(values.phone){
+    const phoneDigits = values.phone.replace(/[^0-9]/g, '');
+    const suspiciousPhone =
+      phoneDigits.startsWith('00') ||
+      (phoneDigits.length !== 10 && phoneDigits.length !== 11);
+    if(suspiciousPhone){
+      const ok = confirm(
+        '電話番号「' + values.phone + '」は先頭または桁数を確認してください。\n\nこのまま保存しますか？'
+      );
+      if(!ok) return false;
+    }
+  }
   if(id){
     const f = state.formats.find(item => item.id === id);
     if(f) Object.assign(f, values, {updatedAt:nowIso()});
