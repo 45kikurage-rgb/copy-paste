@@ -144,12 +144,18 @@ function renderFormats(){
     return '<article class="formatCard" data-format-id="' + escapeHtml(f.id) + '">' +
       '<div class="formatTop"><div><div class="formatName">' + escapeHtml(f.label || ('フォーマット' + (index + 1))) + '</div>' +
       '<div class="formatMeta">' + meta + '</div></div>' +
-      '<button class="miniBtn editFormatBtn" type="button">編集</button></div>' +
+      '<div class="formatActions">' +
+      '<button class="miniBtn duplicateFormatBtn" type="button">複写</button>' +
+      '<button class="miniBtn editFormatBtn" type="button">編集</button></div></div>' +
       '<div class="urlArea"><label>入力するキャンペーンURL</label>' +
       '<div class="urlRow"><input class="campaignUrlInput" type="url" inputmode="url" placeholder="https://..." autocomplete="off">' +
       '<button class="primaryBtn startBtn" type="button">スタート</button></div></div></article>';
   }).join('');
 
+  root.querySelectorAll('.duplicateFormatBtn').forEach(btn => btn.addEventListener('click', () => {
+    const card = btn.closest('.formatCard');
+    duplicateFormat(card.dataset.formatId);
+  }));
   root.querySelectorAll('.editFormatBtn').forEach(btn => btn.addEventListener('click', () => {
     const card = btn.closest('.formatCard');
     openFormatDialog(card.dataset.formatId);
@@ -159,6 +165,27 @@ function renderFormats(){
     const input = card.querySelector('.campaignUrlInput');
     startEntry(card.dataset.formatId, input.value);
   }));
+}
+
+function duplicateFormat(formatId){
+  const source = state.formats.find(item => item.id === formatId);
+  if(!source) return;
+
+  const nextNumber = state.formats.length + 1;
+  const copy = {
+    ...source,
+    id: uid('fmt'),
+    label: 'フォーマット' + nextNumber,
+    createdAt: nowIso(),
+    updatedAt: nowIso()
+  };
+  state.formats.push(copy);
+  saveState();
+  showToast((source.label || 'フォーマット') + 'を「' + copy.label + '」として複写しました');
+  requestAnimationFrame(() => {
+    const card = document.querySelector('.formatCard[data-format-id="' + CSS.escape(copy.id) + '"]');
+    if(card) card.scrollIntoView({behavior:'smooth', block:'center'});
+  });
 }
 
 function renderHistory(){
