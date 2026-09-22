@@ -7,12 +7,12 @@
   <title>Entryマネージャー</title>
   
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css?v=live-5">
+  <link rel="stylesheet" href="./styles.css?v=live-6">
 </head>
 <body>
   <header class="topbar">
     <div>
-      <p class="eyebrow">ENTRY MANAGEMENT <span style="opacity:.55">BUILD 20260922-1833</span></p>
+      <p class="eyebrow">ENTRY MANAGEMENT <span style="opacity:.55">BUILD 20260922-1840</span></p>
       <h1>Entryマネージャー</h1>
     </div>
     <span id="trialBadge" class="badge">試用期間</span>
@@ -493,6 +493,18 @@ function saveFormatFromDialog(){
   if(!values.label){
     showToast('表示名を入力してください');
     return false;
+  }
+  if(values.phone){
+    const phoneDigits = values.phone.replace(/[^0-9]/g, '');
+    const suspiciousPhone =
+      phoneDigits.startsWith('00') ||
+      (phoneDigits.length !== 10 && phoneDigits.length !== 11);
+    if(suspiciousPhone){
+      const ok = confirm(
+        '電話番号「' + values.phone + '」は先頭または桁数を確認してください。\n\nこのまま保存しますか？'
+      );
+      if(!ok) return false;
+    }
   }
   if(id){
     const f = state.formats.find(item => item.id === id);
