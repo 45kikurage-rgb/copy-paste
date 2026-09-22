@@ -34,6 +34,7 @@ button{cursor:pointer}
 .stack.compact{gap:8px}
 .formatCard{background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden}
 .formatTop{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:start;padding:16px 16px 12px}
+.formatActions{display:flex;gap:8px;align-items:center}
 .formatName{font-size:18px;font-weight:850}
 .formatMeta{margin-top:5px;color:var(--muted);font-size:13px;line-height:1.55}
 .iconBtn,.miniBtn{border:1px solid var(--line);background:#191919;color:var(--text);border-radius:10px}
