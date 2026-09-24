@@ -22,6 +22,7 @@ export default {
       if (request.method === 'GET' && path === '/api/coupons') return await listCoupons(request, env);
       if (request.method === 'POST' && path === '/api/coupons/reconcile') return await reconcileExistingUrlCoupons(request, env);
       if (request.method === 'POST' && path === '/api/coupons/register') return await registerCoupon(request, env);
+      if (request.method === 'POST' && path === '/api/coupons/analyze-auto') return await analyzeAutoCoupon(request, env);
       if (request.method === 'POST' && path === '/api/coupons/register-auto') return await registerAutoCoupon(request, env);
 
       let match = path.match(/^\/api\/coupons\/([^/]+)$/);
@@ -1738,13 +1739,94 @@ async function deleteCoupon(request, env, couponId) {
   });
 }
 
+async function analyzeAutoCoupon(request, env) {
+  const body = await readJson(request);
+  const urlValue = normalizeUrl(String(body.url || '').trim());
+  const fingerprint = await sha256Text(urlValue);
+
+  const duplicate = await env.COUPON_DB.prepare(`
+    SELECT c.id, c.name, c.source_name, c.redeem_place, c.capacity, e.expires_on
+    FROM coupon_items i
+    JOIN coupon_expiries e ON e.id = i.expiry_id
+    JOIN coupons c ON c.id = e.coupon_id
+    WHERE i.fingerprint = ?
+    LIMIT 1
+  `).bind(fingerprint).first();
+
+  if (duplicate) {
+    return json(request, env, {
+      status: 'duplicate',
+      duplicate: true,
+      sourceName: duplicate.source_name || duplicate.name,
+      product: duplicate.source_name || duplicate.name,
+      displayName: duplicate.name,
+      capacity: duplicate.capacity || '',
+      redeemPlace: duplicate.redeem_place || '',
+      expiresOn: duplicate.expires_on,
+      existingCard: { id: duplicate.id, name: duplicate.name },
+      suggestRename: false
+    });
+  }
+
+  const analyzed = await analyzeCouponForImport(urlValue, env);
+  const sourceName = normalizeSourceProductName(analyzed.product || '');
+  const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || '').trim();
+  const capacity = normalizeCouponCapacity(analyzed.capacity || analyzed.size || '', sourceName);
+  const expiresOn = String(analyzed.expiresOn || '').trim();
+
+  if (!sourceName || sourceName === '商品名不明' || isGenericSevenProductName(sourceName)) {
+    throw new HttpError(422, '商品名を正しく確認できません。');
+  }
+  if (!redeemPlace) throw new HttpError(422, '引換先を確認できません。');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(422, '利用期限を確認できません。');
+  if (expiresOn < todayInTokyo()) throw new HttpError(422, '期限切れのクーポンは登録できません。');
+
+  const nameKey = couponIdentityKey(sourceName, capacity, redeemPlace, expiresOn);
+  const existing = await env.COUPON_DB.prepare(`
+    SELECT id, name, source_name, capacity, redeem_place
+    FROM coupons
+    WHERE name_key = ? AND coupon_type = 'url'
+    LIMIT 1
+  `).bind(nameKey).first();
+
+  if (existing) {
+    return json(request, env, {
+      status: 'match',
+      duplicate: false,
+      sourceName,
+      product: sourceName,
+      displayName: existing.name,
+      capacity,
+      redeemPlace,
+      expiresOn,
+      existingCard: { id: existing.id, name: existing.name },
+      productImageDataUri: null,
+      suggestRename: false
+    });
+  }
+
+  return json(request, env, {
+    status: 'new',
+    duplicate: false,
+    sourceName,
+    product: sourceName,
+    displayName: sourceName,
+    capacity,
+    redeemPlace,
+    expiresOn,
+    existingCard: null,
+    productImageDataUri: analyzed.productImageDataUri || null,
+    suggestRename: Array.from(sourceName).length >= 15
+  });
+}
+
 async function registerAutoCoupon(request, env) {
   const body = await readJson(request);
   const urlValue = normalizeUrl(String(body.url || '').trim());
   const fingerprint = await sha256Text(urlValue);
 
   const duplicate = await env.COUPON_DB.prepare(`
-    SELECT c.name, c.redeem_place, c.capacity, e.expires_on
+    SELECT c.name, c.source_name, c.redeem_place, c.capacity, e.expires_on
     FROM coupon_items i
     JOIN coupon_expiries e ON e.id = i.expiry_id
     JOIN coupons c ON c.id = e.coupon_id
@@ -1757,16 +1839,19 @@ async function registerAutoCoupon(request, env) {
       newCount: 0,
       duplicateCount: 1,
       name: duplicate.name,
-      product: duplicate.name,
+      displayName: duplicate.name,
+      sourceName: duplicate.source_name || duplicate.name,
+      product: duplicate.source_name || duplicate.name,
       capacity: duplicate.capacity || '',
       redeemPlace: duplicate.redeem_place || '',
       expiresOn: duplicate.expires_on,
       imageSaved: true,
+      matchedExisting: true,
       analysisMode: 'duplicate'
     });
   }
 
-  const suppliedName = String(body.name || body.product || '').trim();
+  const suppliedName = String(body.sourceName || body.product || body.name || '').trim();
   const suppliedPlace = String(body.redeemPlace || body.merchant || '').trim();
   const suppliedExpiry = String(body.expiresOn || '').trim();
   const suppliedCapacity = String(body.capacity || '').trim();
@@ -1781,11 +1866,12 @@ async function registerAutoCoupon(request, env) {
         expiresOn: suppliedExpiry,
         productImageDataUri: body.productImageDataUri || null,
         status: 'ok',
-        analysisMode: 'client-fallback'
+        analysisMode: 'confirmed-preview'
       }
     : await analyzeCouponForImport(urlValue, env);
 
-  const identity = await ensureIdentityCoupon(env, analyzed);
+  const requestedDisplayName = String(body.displayName || '').trim();
+  const identity = await ensureIdentityCoupon(env, analyzed, {}, { displayName: requestedDisplayName });
 
   if (identity.expiresOn < todayInTokyo()) {
     throw new HttpError(422, '期限切れのクーポンは登録できません。');
@@ -1803,12 +1889,15 @@ async function registerAutoCoupon(request, env) {
   return json(request, env, {
     newCount,
     duplicateCount: newCount ? 0 : 1,
-    name: identity.name,
-    product: identity.name,
+    name: identity.displayName,
+    displayName: identity.displayName,
+    sourceName: identity.sourceName,
+    product: identity.sourceName,
     capacity: identity.capacity,
     redeemPlace: identity.redeemPlace,
     expiresOn: identity.expiresOn,
-    imageSaved: true,
+    imageSaved: identity.imageSaved,
+    matchedExisting: !identity.created,
     analysisMode: analyzed.analysisMode || 'detail'
   }, newCount ? 201 : 200);
 }
