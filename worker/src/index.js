@@ -515,6 +515,16 @@ async function ensureIdentityCoupon(env, analyzed, fallback = {}, options = {}) 
 
   if (!coupon) throw new HttpError(500, 'クーポンカードを作成できませんでした。');
 
+  const requestedDisplayName = String(options.displayName || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
+  if (requestedDisplayName) {
+    if (requestedDisplayName.length > 100) throw new HttpError(422, 'サイト表示名は100文字以内にしてください。');
+    if (coupon.name !== requestedDisplayName) {
+      await env.COUPON_DB.prepare('UPDATE coupons SET name = ?, updated_at = ? WHERE id = ?')
+        .bind(requestedDisplayName, now, coupon.id).run();
+      coupon = { ...coupon, name: requestedDisplayName };
+    }
+  }
+
   const proposedExpiryId = crypto.randomUUID();
   await env.COUPON_DB.prepare(`
     INSERT OR IGNORE INTO coupon_expiries (id, coupon_id, expires_on, created_at)
@@ -1774,30 +1784,9 @@ async function analyzeAutoCoupon(request, env) {
   const urlValue = normalizeUrl(String(body.url || '').trim());
   const fingerprint = await sha256Text(urlValue);
 
-  const duplicate = await env.COUPON_DB.prepare(`
-    SELECT c.id, c.name, c.source_name, c.redeem_place, c.capacity, e.expires_on
-    FROM coupon_items i
-    JOIN coupon_expiries e ON e.id = i.expiry_id
-    JOIN coupons c ON c.id = e.coupon_id
-    WHERE i.fingerprint = ?
-    LIMIT 1
-  `).bind(fingerprint).first();
-
-  if (duplicate) {
-    return json(request, env, {
-      status: 'duplicate',
-      duplicate: true,
-      sourceName: duplicate.source_name || duplicate.name,
-      product: duplicate.source_name || duplicate.name,
-      displayName: duplicate.name,
-      capacity: duplicate.capacity || '',
-      redeemPlace: duplicate.redeem_place || '',
-      expiresOn: duplicate.expires_on,
-      existingCard: { id: duplicate.id, name: duplicate.name },
-      suggestRename: false
-    });
-  }
-
+  // 登録済みURLでも必ずリンク先を再解析する。
+  // 旧ロジックで「セブン-イレブン クーポン」等に誤分類されたURLを、
+  // 同じURLの再共有だけで正しい商品情報へ修正できるようにする。
   const analyzed = await analyzeCouponForImport(urlValue, env);
   const sourceName = normalizeSourceProductName(analyzed.sourceProductName || analyzed.product || '');
   const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || '').trim();
@@ -1811,25 +1800,67 @@ async function analyzeAutoCoupon(request, env) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(422, '利用期限を確認できません。');
   if (expiresOn < todayInTokyo()) throw new HttpError(422, '期限切れのクーポンは登録できません。');
 
-  const nameKey = couponIdentityKey(sourceName, capacity, redeemPlace, expiresOn);
-  const existing = await env.COUPON_DB.prepare(`
+  const identityKey = couponIdentityKey(sourceName, capacity, redeemPlace, expiresOn);
+
+  const duplicate = await env.COUPON_DB.prepare(`
+    SELECT i.id AS item_id, i.expiry_id,
+           c.id AS coupon_id, c.name, c.source_name, c.name_key, c.redeem_place, c.capacity,
+           e.expires_on
+    FROM coupon_items i
+    JOIN coupon_expiries e ON e.id = i.expiry_id
+    JOIN coupons c ON c.id = e.coupon_id
+    WHERE i.fingerprint = ?
+    LIMIT 1
+  `).bind(fingerprint).first();
+
+  const target = await env.COUPON_DB.prepare(`
     SELECT id, name, source_name, capacity, redeem_place
     FROM coupons
     WHERE name_key = ? AND coupon_type = 'url'
     LIMIT 1
-  `).bind(nameKey).first();
+  `).bind(identityKey).first();
 
-  if (existing) {
+  if (duplicate) {
+    const storedSource = normalizeSourceProductName(duplicate.source_name || duplicate.name);
+    const needsRepair =
+      duplicate.name_key !== identityKey
+      || storedSource !== sourceName
+      || String(duplicate.capacity || '') !== capacity
+      || String(duplicate.redeem_place || '') !== redeemPlace
+      || String(duplicate.expires_on || '') !== expiresOn;
+
+    const targetName = target?.name
+      || (!isGenericCouponDisplayName(duplicate.name) ? duplicate.name : sourceName);
+
+    return json(request, env, {
+      status: 'duplicate',
+      duplicate: true,
+      needsRepair,
+      sourceName,
+      product: sourceName,
+      displayName: targetName,
+      capacity,
+      redeemPlace,
+      expiresOn,
+      existingCard: target
+        ? { id: target.id, name: target.name }
+        : { id: duplicate.coupon_id, name: targetName },
+      productImageDataUri: needsRepair ? (analyzed.productImageDataUri || null) : null,
+      suggestRename: needsRepair && Array.from(sourceName).length >= 15
+    });
+  }
+
+  if (target) {
     return json(request, env, {
       status: 'match',
       duplicate: false,
       sourceName,
       product: sourceName,
-      displayName: existing.name,
+      displayName: target.name,
       capacity,
       redeemPlace,
       expiresOn,
-      existingCard: { id: existing.id, name: existing.name },
+      existingCard: { id: target.id, name: target.name },
       productImageDataUri: null,
       suggestRename: false
     });
@@ -1855,32 +1886,6 @@ async function registerAutoCoupon(request, env) {
   const urlValue = normalizeUrl(String(body.url || '').trim());
   const fingerprint = await sha256Text(urlValue);
 
-  const duplicate = await env.COUPON_DB.prepare(`
-    SELECT c.name, c.source_name, c.redeem_place, c.capacity, e.expires_on
-    FROM coupon_items i
-    JOIN coupon_expiries e ON e.id = i.expiry_id
-    JOIN coupons c ON c.id = e.coupon_id
-    WHERE i.fingerprint = ?
-    LIMIT 1
-  `).bind(fingerprint).first();
-
-  if (duplicate) {
-    return json(request, env, {
-      newCount: 0,
-      duplicateCount: 1,
-      name: duplicate.name,
-      displayName: duplicate.name,
-      sourceName: duplicate.source_name || duplicate.name,
-      product: duplicate.source_name || duplicate.name,
-      capacity: duplicate.capacity || '',
-      redeemPlace: duplicate.redeem_place || '',
-      expiresOn: duplicate.expires_on,
-      imageSaved: true,
-      matchedExisting: true,
-      analysisMode: 'duplicate'
-    });
-  }
-
   const suppliedName = String(body.sourceName || body.product || body.name || '').trim();
   const suppliedPlace = String(body.redeemPlace || body.merchant || '').trim();
   const suppliedExpiry = String(body.expiresOn || '').trim();
@@ -1889,6 +1894,7 @@ async function registerAutoCoupon(request, env) {
 
   const analyzed = hasSuppliedAnalysis
     ? {
+        sourceProductName: suppliedName,
         product: suppliedName,
         capacity: suppliedCapacity,
         redeemPlace: suppliedPlace,
@@ -1900,11 +1906,69 @@ async function registerAutoCoupon(request, env) {
       }
     : await analyzeCouponForImport(urlValue, env);
 
+  const duplicate = await env.COUPON_DB.prepare(`
+    SELECT i.id AS item_id, i.expiry_id,
+           c.id AS coupon_id, c.name, c.source_name, c.redeem_place, c.capacity,
+           e.expires_on
+    FROM coupon_items i
+    JOIN coupon_expiries e ON e.id = i.expiry_id
+    JOIN coupons c ON c.id = e.coupon_id
+    WHERE i.fingerprint = ?
+    LIMIT 1
+  `).bind(fingerprint).first();
+
   const requestedDisplayName = String(body.displayName || '').trim();
-  const identity = await ensureIdentityCoupon(env, analyzed, {}, { displayName: requestedDisplayName });
+  const identity = await ensureIdentityCoupon(
+    env,
+    analyzed,
+    duplicate || {},
+    { displayName: requestedDisplayName }
+  );
 
   if (identity.expiresOn < todayInTokyo()) {
     throw new HttpError(422, '期限切れのクーポンは登録できません。');
+  }
+
+  if (duplicate) {
+    const changed =
+      duplicate.coupon_id !== identity.couponId
+      || duplicate.expiry_id !== identity.expiryId
+      || normalizeSourceProductName(duplicate.source_name || duplicate.name) !== identity.sourceName
+      || String(duplicate.capacity || '') !== identity.capacity
+      || String(duplicate.redeem_place || '') !== identity.redeemPlace
+      || String(duplicate.expires_on || '') !== identity.expiresOn
+      || (requestedDisplayName && duplicate.name !== identity.displayName);
+
+    await env.COUPON_DB.prepare('UPDATE coupon_items SET expiry_id = ? WHERE id = ?')
+      .bind(identity.expiryId, duplicate.item_id).run();
+
+    if (duplicate.coupon_id !== identity.couponId) {
+      await cleanupEmptyUrlCoupon(env, duplicate.coupon_id);
+    } else if (duplicate.expiry_id !== identity.expiryId) {
+      await env.COUPON_DB.prepare(`
+        DELETE FROM coupon_expiries
+        WHERE id = ?
+          AND NOT EXISTS (SELECT 1 FROM coupon_items WHERE expiry_id = ?)
+      `).bind(duplicate.expiry_id, duplicate.expiry_id).run();
+    }
+
+    await mergeCanonicalCouponGroups(env);
+
+    return json(request, env, {
+      newCount: 0,
+      duplicateCount: 1,
+      repaired: changed,
+      name: identity.displayName,
+      displayName: identity.displayName,
+      sourceName: identity.sourceName,
+      product: identity.sourceName,
+      capacity: identity.capacity,
+      redeemPlace: identity.redeemPlace,
+      expiresOn: identity.expiresOn,
+      imageSaved: identity.imageSaved,
+      matchedExisting: true,
+      analysisMode: analyzed.analysisMode || 'duplicate-repair'
+    });
   }
 
   const result = await env.COUPON_DB.prepare(`
@@ -1919,6 +1983,7 @@ async function registerAutoCoupon(request, env) {
   return json(request, env, {
     newCount,
     duplicateCount: newCount ? 0 : 1,
+    repaired: false,
     name: identity.displayName,
     displayName: identity.displayName,
     sourceName: identity.sourceName,
