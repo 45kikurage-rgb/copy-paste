@@ -2,7 +2,7 @@
   'use strict';
   const AUTH_KEY = 'portal-auth-ok-v1';
   const RESERVATION_KEY = 'coupon-active-reservation-v1';
-  const RECONCILE_SESSION_KEY = 'coupon-url-reconcile-20260924-v8-identity4';
+  const RECONCILE_SESSION_KEY = 'coupon-url-reconcile-20260924-v9-source-display';
   const API_BASE = String(window.COUPON_API_BASE || '').replace(/\/$/, '');
   const isUnconfigured = !API_BASE || API_BASE.includes('YOUR_SUBDOMAIN');
 
