@@ -928,40 +928,42 @@ function compactSevenProductNames(names) {
 
 function pickSevenFoodProduct(lines, descriptors) {
   const generic = /^(?:引換クーポン|クーポン|対象商品|商品画像|画像|バーコード|ロゴ|ご注意|クーポンの利用期間|セブン\s*[‐ー・\-]?\s*イレブン店舗で引換えられます|セブン\s*[‐ー・\-]?\s*イレブン\s*(?:引換\s*)?クーポン)$/;
+
+  // 商品画像の短いaltより、ページ内「対象商品」に列挙された正式名称を優先する。
+  const targetIndex = lines.findIndex(line => /^■?対象商品/.test(line));
+  if (targetIndex >= 0) {
+    const names = [];
+    for (const line of lines.slice(targetIndex + 1, targetIndex + 9)) {
+      const clean = line.replace(/^[・●■※\s]+/, '').trim();
+      if (!clean || /対象外|ご注意|利用期間|クーポン|地域により|画像はイメージ|運営元|提供元|発行元/.test(clean)) break;
+      if (clean.length <= 180 && !generic.test(clean)) names.push(clean);
+      if (names.length >= 6) break;
+    }
+    if (names.length) return compactSevenProductNames(names);
+  }
+
   const descriptor = descriptors
     .map(item => item.alt.replace(/\s+/g, ' ').trim())
-    .filter(value => value.length >= 3 && value.length <= 120 && !generic.test(value))
+    .filter(value => value.length >= 3 && value.length <= 180 && !generic.test(value))
     .map(value => ({
       value,
       score: (/(?:または|いずれか)/.test(value) ? 500 : 0)
         + (/\d+\s*(?:個|本|枚|パック)/.test(value) ? 250 : 0)
-        + (/ななチキ|揚げ鶏|チキン|おにぎり|パン|菓子|アイス|弁当|飲料/.test(value) ? 120 : 0)
+        + (/ななチキ|揚げ鶏|チキン|おにぎり|パン|菓子|アイス|弁当|飲料|カフェ|ラテ/.test(value) ? 120 : 0)
         - (/バーコード|ロゴ|QR|2次元|店舗で|対象商品の内/.test(value) ? 500 : 0)
     }))
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score)[0]?.value;
   if (descriptor) return descriptor;
 
-  const targetIndex = lines.findIndex(line => /^■?対象商品/.test(line));
-  if (targetIndex >= 0) {
-    const names = [];
-    for (const line of lines.slice(targetIndex + 1, targetIndex + 7)) {
-      const clean = line.replace(/^[・●■※\s]+/, '').trim();
-      if (!clean || /対象外|ご注意|利用期間|クーポン|地域により|画像はイメージ|運営元|提供元|発行元/.test(clean)) break;
-      if (clean.length <= 70) names.push(clean);
-      if (names.length >= 4) break;
-    }
-    if (names.length) return compactSevenProductNames(names);
-  }
-
   const candidates = lines
     .map((line, index) => ({ line, index }))
-    .filter(item => item.line.length >= 3 && item.line.length <= 120 && !generic.test(item.line))
+    .filter(item => item.line.length >= 3 && item.line.length <= 180 && !generic.test(item.line))
     .map(item => {
       let score = Math.max(0, 50 - item.index);
       if (/(?:または|いずれか)/.test(item.line)) score += 500;
       if (/\d+\s*(?:個|本|枚|パック)/.test(item.line)) score += 250;
-      if (/ななチキ|揚げ鶏|チキン|おにぎり|パン|菓子|アイス|弁当|飲料/.test(item.line)) score += 120;
+      if (/ななチキ|揚げ鶏|チキン|おにぎり|パン|菓子|アイス|弁当|飲料|カフェ|ラテ/.test(item.line)) score += 120;
       if (/対象商品の内|店舗でご利用可能|利用期間|ご注意|販売休止|地域により|画像はイメージ/.test(item.line)) score -= 500;
       return { ...item, score };
     })
