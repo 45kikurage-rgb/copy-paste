@@ -597,6 +597,9 @@ async function reconcileOneExistingUrlItem(env, row) {
 
 async function reconcileExistingUrlCoupons(request, env) {
   const body = await readJson(request);
+  if (body.mode !== 'manual-confirmed') {
+    throw new HttpError(409, '既存クーポンの一括再解析は手動確認が必要です。');
+  }
   const limit = Math.max(1, Math.min(6, Math.floor(Number(body.limit) || 6)));
 
   const beforeCountRow = await env.COUPON_DB.prepare(
