@@ -16,7 +16,7 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
 .preview.no-image{grid-template-columns:1fr}.preview[hidden]{display:none}.product-image{width:116px;aspect-ratio:1;border:2px solid rgba(140,119,98,.45);border-radius:14px;background:#fff;object-fit:contain}
 .product-image[hidden]{display:none}.detail{display:grid;gap:7px;min-width:0;padding:11px;border:2px solid rgba(140,119,98,.35);border-radius:13px;background:#fffdf8}
 .row{display:grid;grid-template-columns:68px minmax(0,1fr);gap:8px}.label{color:var(--sub);font-weight:700}.value{font-weight:700;overflow-wrap:anywhere;line-height:1.45}
-.full-name{white-space:normal}.spinner{width:42px;height:42px;margin:4px auto;border:4px solid rgba(60,48,38,.18);border-top-color:var(--btn);border-radius:50%;animation:spin .85s linear infinite}
+.full-name{white-space:pre-wrap}.spinner{width:42px;height:42px;margin:4px auto;border:4px solid rgba(60,48,38,.18);border-top-color:var(--btn);border-radius:50%;animation:spin .85s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}.ok{color:var(--ok)}.error{color:var(--ng)}
 .rename-box{display:grid;gap:9px;padding:12px;border:2px solid rgba(140,119,98,.4);border-radius:13px;background:#fff4df}
 .rename-title{font-weight:700;line-height:1.45}.rename-note{font-size:.8rem;color:var(--sub);line-height:1.45}
@@ -87,6 +87,7 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
   const renameActions=document.getElementById('renameActions');
   const doneActions=document.getElementById('doneActions');
   const note=document.getElementById('note');
+
   let sharedUrl='';
   let analyzed=null;
   let busy=false;
@@ -108,6 +109,13 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
     return data;
   }
 
+  function resetControls(){
+    confirmActions.hidden=true;
+    renameActions.hidden=true;
+    renameBox.hidden=true;
+    doneActions.hidden=true;
+  }
+
   function setBusy(value,message=''){
     busy=value;
     spinner.hidden=!value;
@@ -115,8 +123,17 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
     for(const button of document.querySelectorAll('button')) button.disabled=value;
   }
 
+  function formatProductName(value){
+    const raw=String(value||'').trim();
+    if(!raw) return '—';
+    if(raw.includes(' または ')){
+      return '・'+raw.split(' または ').join('\n・');
+    }
+    return raw;
+  }
+
   function showDetails(data,showImage){
-    product.textContent=data.sourceName||data.product||'—';
+    product.textContent=formatProductName(data.sourceName||data.product||'');
     capacity.textContent=data.capacity||'—';
     place.textContent=data.redeemPlace||'—';
     expiry.textContent=(data.expiresOn||'—').replace(/-/g,'/');
@@ -124,6 +141,7 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
 
     const hasImage=Boolean(showImage&&data.productImageDataUri);
     preview.classList.toggle('no-image',!hasImage);
+
     if(hasImage){
       productImage.src=data.productImageDataUri;
       productImage.hidden=false;
@@ -133,31 +151,38 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
     }
   }
 
+  function showRename(){
+    renameBox.hidden=false;
+    displayNameInput.value=analyzed.sourceName||analyzed.product||'';
+    renameActions.hidden=false;
+  }
+
   function finish(message,isError=false){
+    resetControls();
     spinner.hidden=true;
     status.textContent=message;
     status.className='status '+(isError?'error':'ok');
-    confirmActions.hidden=true;
-    renameActions.hidden=true;
-    renameBox.hidden=true;
     doneActions.hidden=false;
   }
 
   function cancelRegistration(){
+    resetControls();
     spinner.hidden=true;
-    status.textContent='登録しませんでした。';
+    status.textContent=analyzed?.status==='duplicate'
+      ? '既存データの修正をキャンセルしました。'
+      : '登録をキャンセルしました。';
     status.className='status';
-    confirmActions.hidden=true;
-    renameActions.hidden=true;
-    renameBox.hidden=true;
-    note.textContent='URLは登録していません。';
+    note.textContent='データは変更していません。';
     doneActions.hidden=false;
   }
 
   async function commit(displayName=''){
     if(!analyzed||busy) return;
+
     try{
-      setBusy(true,'登録しています...');
+      resetControls();
+      setBusy(true, analyzed.status==='duplicate' ? '登録済みURLの情報を修正しています...' : '登録しています...');
+
       const result=await jsonFetch(`${MANAGER_API}/api/coupons/register-auto`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -173,45 +198,75 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
       });
 
       analyzed={...analyzed,...result};
-      showDetails({
-        ...analyzed,
-        sourceName:result.sourceName||analyzed.sourceName,
-        capacity:result.capacity||analyzed.capacity,
-        redeemPlace:result.redeemPlace||analyzed.redeemPlace,
-        expiresOn:result.expiresOn||analyzed.expiresOn
-      },false);
+      showDetails(analyzed,false);
+      setBusy(false);
 
-      finish(`${result.displayName||result.name||'クーポン'}カードに登録しました。`);
-      note.textContent=result.matchedExisting
-        ? '既存カードへ1件追加しました。'
-        : (result.displayName&&result.sourceName&&result.displayName!==result.sourceName
-          ? `サイト表示名は「${result.displayName}」です。抽出商品名はデータベースに保持しています。`
-          : '新しいカードとして登録しました。');
+      if(result.repaired){
+        finish(`${result.displayName||result.name||'クーポン'}カードの情報を修正しました。`);
+        note.textContent='登録枚数は増やさず、このURLの分類情報だけを修正しました。';
+        return;
+      }
+
+      if(result.newCount>0&&result.matchedExisting){
+        finish(`${result.displayName||result.name||'クーポン'}カードに登録しました。`);
+        note.textContent='既存カードへ1件追加しました。';
+        return;
+      }
+
+      if(result.newCount>0){
+        finish(`${result.displayName||result.name||'クーポン'}カードを登録しました。`);
+        note.textContent=result.displayName&&result.sourceName&&result.displayName!==result.sourceName
+          ? `サイト表示名は「${result.displayName}」です。抽出商品名全文はデータベースに保持しています。`
+          : '新しいカードとして登録しました。';
+        return;
+      }
+
+      finish('このURLはすでに登録済みです。');
+      note.textContent=`登録先：${result.displayName||result.name||'既存'}カード`;
     }catch(error){
       setBusy(false);
-      finish(error.message||'登録に失敗しました。',true);
-      note.textContent='登録は完了していません。';
+      finish(error.message||'処理に失敗しました。',true);
+      note.textContent='データは変更していません。';
     }
   }
 
   async function run(){
+    resetControls();
     sharedUrl=extractUrl();
+
     if(!sharedUrl){finish('共有されたURLを確認できませんでした。',true);return}
     if(!MANAGER_API){finish('自己利用分APIが設定されていません。',true);return}
 
     try{
-      setBusy(true,'商品名・容量・引換先・引換期限を解析しています...');
+      setBusy(true,'商品名全文・容量・引換先・引換期限を解析しています...');
+
       analyzed=await jsonFetch(`${MANAGER_API}/api/coupons/analyze-auto`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({url:sharedUrl})
       });
+
       setBusy(false);
+      resetControls();
 
       if(analyzed.status==='duplicate'){
-        showDetails(analyzed,false);
-        finish('このURLはすでに登録済みです。');
-        note.textContent=`登録先：${analyzed.displayName||analyzed.existingCard?.name||'既存'}カード`;
+        showDetails(analyzed,Boolean(analyzed.needsRepair));
+
+        if(!analyzed.needsRepair){
+          finish('このURLはすでに登録済みです。');
+          note.textContent=`登録先：${analyzed.displayName||analyzed.existingCard?.name||'既存'}カード`;
+          return;
+        }
+
+        status.textContent='登録済みURLを再解析しました。商品情報を確認してください。';
+        status.className='status';
+        note.textContent='登録枚数は増やさず、誤分類されていた情報だけを修正します。';
+
+        if(analyzed.suggestRename){
+          showRename();
+        }else{
+          confirmActions.hidden=false;
+        }
         return;
       }
 
@@ -219,7 +274,7 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
         showDetails(analyzed,false);
         status.textContent=`${analyzed.existingCard?.name||analyzed.displayName||'既存'}カードに登録します。`;
         status.className='status';
-        note.textContent='同じ商品名・容量・引換先・引換期限のカードが見つかりました。商品画像の再確認は省略します。';
+        note.textContent='商品名全文・容量・引換先・引換期限が一致しました。商品画像の再提示は省略します。';
         confirmActions.hidden=false;
         return;
       }
@@ -229,14 +284,12 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
       status.className='status';
 
       if(analyzed.suggestRename){
-        renameBox.hidden=false;
-        displayNameInput.value=analyzed.sourceName||analyzed.product||'';
-        renameActions.hidden=false;
-        note.textContent='商品名が15文字以上のため、サイト表示名を短くすることを提案しています。';
+        showRename();
+        note.textContent='商品名が15文字以上のため、サイト表示名を短くすることを提案しています。DBには上の商品名全文を保存します。';
       }else{
         status.textContent='新しいカードとして登録します。';
+        note.textContent='DBには上の商品名全文を保存します。';
         confirmActions.hidden=false;
-        note.textContent='DBには抽出した商品名をそのまま保存します。';
       }
     }catch(error){
       setBusy(false);
