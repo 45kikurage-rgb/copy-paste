@@ -1,7 +1,7 @@
 const RESERVATION_SECONDS = 10 * 60;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
-const URL_RECONCILE_VERSION = '2026-09-21-v7-shared-analyzer';
+const URL_RECONCILE_VERSION = '2026-09-24-v8-identity4';
 
 export default {
   async fetch(request, env) {
@@ -69,10 +69,20 @@ function assertBindings(env) {
 
 async function ensureCouponSchema(env) {
   const info = await env.COUPON_DB.prepare('PRAGMA table_info(coupons)').all();
-  const hasRedeemPlace = (info.results || []).some(row => row.name === 'redeem_place');
-  if (!hasRedeemPlace) {
+  const columns = new Set((info.results || []).map(row => row.name));
+
+  if (!columns.has('redeem_place')) {
     try {
       await env.COUPON_DB.prepare("ALTER TABLE coupons ADD COLUMN redeem_place TEXT NOT NULL DEFAULT ''").run();
+    } catch (error) {
+      const message = String(error?.message || error || '');
+      if (!/duplicate column|already exists/i.test(message)) throw error;
+    }
+  }
+
+  if (!columns.has('capacity')) {
+    try {
+      await env.COUPON_DB.prepare("ALTER TABLE coupons ADD COLUMN capacity TEXT NOT NULL DEFAULT ''").run();
     } catch (error) {
       const message = String(error?.message || error || '');
       if (!/duplicate column|already exists/i.test(message)) throw error;
@@ -87,6 +97,17 @@ async function ensureCouponSchema(env) {
       message TEXT,
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (coupon_id, version)
+    )
+  `).run();
+
+  await env.COUPON_DB.prepare(`
+    CREATE TABLE IF NOT EXISTS coupon_item_reconcile (
+      item_id TEXT NOT NULL,
+      version TEXT NOT NULL,
+      status TEXT NOT NULL,
+      message TEXT,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (item_id, version)
     )
   `).run();
 }
@@ -130,6 +151,40 @@ function canonicalCouponNameForStorage(name, redeemPlace = '') {
     value = value.replace(/いずれか1点$/, 'いずれか1本');
   }
   return value;
+}
+
+function normalizeCouponCapacity(explicitValue = '', productName = '') {
+  const source = String(explicitValue || productName || '').normalize('NFKC');
+  const found = [];
+
+  for (const match of source.matchAll(/(\d+(?:\.\d+)?)\s*(ml|mL|L|g|kg)\b/g)) {
+    let unit = match[2];
+    if (/^ml$/i.test(unit)) unit = 'ml';
+    else if (/^kg$/i.test(unit)) unit = 'kg';
+    else if (/^g$/i.test(unit)) unit = 'g';
+    else unit = 'L';
+    const label = `${match[1]}${unit}`;
+    if (!found.includes(label)) found.push(label);
+  }
+
+  return found.join(' / ');
+}
+
+function couponIdentityKey(name, capacity, redeemPlace, expiresOn) {
+  return normalizeName([
+    canonicalCouponNameForStorage(name, redeemPlace),
+    normalizeCouponCapacity(capacity, name),
+    String(redeemPlace || '').trim(),
+    String(expiresOn || '').trim()
+  ].join('\u0000'));
+}
+
+function isGenericSevenProductName(value) {
+  const text = String(value || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
+  if (!text) return true;
+  return /^(?:セブン[‐ー・\- ]?イレブン\s*)?(?:引換\s*)?クーポン$/i.test(text)
+    || /^セブン[‐ー・\- ]?イレブン.*クーポン$/i.test(text)
+    || /^(?:商品|対象商品|商品画像|引換クーポン)$/i.test(text);
 }
 
 async function ensureCouponMaintenance(env) {
