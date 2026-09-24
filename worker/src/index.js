@@ -195,21 +195,37 @@ async function ensureCouponMaintenance(env) {
 
 async function mergeCanonicalCouponGroups(env) {
   const rowsResult = await env.COUPON_DB.prepare(`
-    SELECT id, name, name_key, coupon_type, redeem_place, cover_object_key, created_at
-    FROM coupons
-    WHERE coupon_type = 'url'
-    ORDER BY created_at ASC, id ASC
+    SELECT c.id, c.name, c.name_key, c.coupon_type, c.redeem_place, c.capacity,
+           c.cover_object_key, c.created_at,
+           MIN(e.expires_on) AS expires_on,
+           COUNT(DISTINCT e.id) AS expiry_count
+    FROM coupons c
+    LEFT JOIN coupon_expiries e ON e.coupon_id = c.id
+    WHERE c.coupon_type = 'url'
+    GROUP BY c.id
+    ORDER BY c.created_at ASC, c.id ASC
   `).all();
+
   const rows = rowsResult.results || [];
   const groups = new Map();
 
   for (const row of rows) {
+    // 期限が複数ある旧カードは、item-level reconciliationで先に分割する。
+    if (Number(row.expiry_count || 0) !== 1 || !row.expires_on) continue;
+
     const canonicalName = canonicalCouponNameForStorage(row.name, row.redeem_place);
-    const canonicalKey = normalizeName(`${canonicalName}\u0000${row.redeem_place || ''}`);
-    const groupKey = `${canonicalKey}\u0001${row.coupon_type}`;
-    const group = groups.get(groupKey) || { canonicalName, canonicalKey, rows: [] };
+    const capacity = normalizeCouponCapacity(row.capacity, canonicalName);
+    const identityKey = couponIdentityKey(canonicalName, capacity, row.redeem_place, row.expires_on);
+    const group = groups.get(identityKey) || {
+      canonicalName,
+      capacity,
+      redeemPlace: row.redeem_place || '',
+      expiresOn: row.expires_on,
+      identityKey,
+      rows: []
+    };
     group.rows.push(row);
-    groups.set(groupKey, group);
+    groups.set(identityKey, group);
   }
 
   for (const group of groups.values()) {
@@ -228,36 +244,23 @@ async function mergeCanonicalCouponGroups(env) {
       if (Number(activeReservation?.count || 0) > 0) continue;
     }
 
-    const target = group.rows.find(row => row.name_key === group.canonicalKey) || group.rows[0];
+    const target = group.rows.find(row => row.name_key === group.identityKey) || group.rows[0];
     let targetCover = target.cover_object_key || null;
+    const targetExpiry = await env.COUPON_DB.prepare(
+      'SELECT id FROM coupon_expiries WHERE coupon_id = ? AND expires_on = ? LIMIT 1'
+    ).bind(target.id, group.expiresOn).first();
+    if (!targetExpiry?.id) continue;
 
     for (const source of group.rows) {
       if (source.id === target.id) continue;
 
-      const expiries = await env.COUPON_DB.prepare(
-        'SELECT id, expires_on, created_at FROM coupon_expiries WHERE coupon_id = ? ORDER BY created_at, id'
-      ).bind(source.id).all();
+      const sourceExpiry = await env.COUPON_DB.prepare(
+        'SELECT id FROM coupon_expiries WHERE coupon_id = ? AND expires_on = ? LIMIT 1'
+      ).bind(source.id, group.expiresOn).first();
 
-      for (const expiry of expiries.results || []) {
-        let targetExpiry = await env.COUPON_DB.prepare(
-          'SELECT id FROM coupon_expiries WHERE coupon_id = ? AND expires_on = ?'
-        ).bind(target.id, expiry.expires_on).first();
-
-        if (!targetExpiry) {
-          const newExpiryId = crypto.randomUUID();
-          await env.COUPON_DB.prepare(`
-            INSERT OR IGNORE INTO coupon_expiries (id, coupon_id, expires_on, created_at)
-            VALUES (?, ?, ?, ?)
-          `).bind(newExpiryId, target.id, expiry.expires_on, expiry.created_at || nowSeconds()).run();
-          targetExpiry = await env.COUPON_DB.prepare(
-            'SELECT id FROM coupon_expiries WHERE coupon_id = ? AND expires_on = ?'
-          ).bind(target.id, expiry.expires_on).first();
-        }
-
-        if (targetExpiry?.id) {
-          await env.COUPON_DB.prepare('UPDATE coupon_items SET expiry_id = ? WHERE expiry_id = ?')
-            .bind(targetExpiry.id, expiry.id).run();
-        }
+      if (sourceExpiry?.id) {
+        await env.COUPON_DB.prepare('UPDATE coupon_items SET expiry_id = ? WHERE expiry_id = ?')
+          .bind(targetExpiry.id, sourceExpiry.id).run();
       }
 
       await env.COUPON_DB.prepare('UPDATE reservations SET coupon_id = ? WHERE coupon_id = ?')
@@ -269,15 +272,25 @@ async function mergeCanonicalCouponGroups(env) {
         await env.COUPON_IMAGES.delete(source.cover_object_key).catch(() => {});
       }
 
+      await env.COUPON_DB.prepare('DELETE FROM coupon_expiries WHERE coupon_id = ?').bind(source.id).run();
+      await env.COUPON_DB.prepare('DELETE FROM coupon_url_reconcile WHERE coupon_id = ?').bind(source.id).run();
       await env.COUPON_DB.prepare('DELETE FROM coupons WHERE id = ?').bind(source.id).run();
     }
 
-    const safeNameKey = group.canonicalKey;
     await env.COUPON_DB.prepare(`
       UPDATE coupons
-      SET name = ?, name_key = ?, cover_object_key = COALESCE(?, cover_object_key), updated_at = ?
+      SET name = ?, name_key = ?, redeem_place = ?, capacity = ?,
+          cover_object_key = COALESCE(?, cover_object_key), updated_at = ?
       WHERE id = ?
-    `).bind(group.canonicalName, safeNameKey, targetCover, nowSeconds(), target.id).run();
+    `).bind(
+      group.canonicalName,
+      group.identityKey,
+      group.redeemPlace,
+      group.capacity,
+      targetCover,
+      nowSeconds(),
+      target.id
+    ).run();
   }
 }
 
