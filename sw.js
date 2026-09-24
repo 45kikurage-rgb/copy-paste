@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v24-coupon-identity4';
+const CACHE='url-format-shisa-v25-coupon-source-display';
 const CORE=[
   './',
   './index.html',
