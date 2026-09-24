@@ -1221,7 +1221,8 @@ async function analyzeStarbucksDirectForImport(urlValue) {
   if (parsed.hostname !== 'gift.starbucks.co.jp' || !/^\/e\/[A-Za-z0-9_-]+\/?$/.test(parsed.pathname)) return null;
 
   const page = await fetchStarbucksDirectPage(urlValue);
-  const text = htmlVisibleLines(page.html).join('\n').normalize('NFKC');
+  const visible = htmlVisibleLines(page.html);
+  const text = visible.join('\n').normalize('NFKC');
   const candidates = starbucksAmountCandidates(page.html, text);
   const amount = Number(candidates[0]?.amount || 0);
 
@@ -1230,8 +1231,15 @@ async function analyzeStarbucksDirectForImport(urlValue) {
   const expiresOn = extractLatestIsoDate(text + '\n' + decodeHtmlEntities(page.html));
   if (!expiresOn) throw new HttpError(422, 'スターバックスeGiftの有効期限を読み取れませんでした。');
 
+  const sourceProductName = normalizeSourceProductName(
+    visible.find(line => /ドリンク/.test(line) && /円/.test(line) && !/有効期限|利用期限/.test(line))
+      || genericOgValue(page.html, 'og:title')
+      || ('スターバックス ドリンクチケット ' + amount + '円')
+  );
+
   return {
     product: 'スタバ' + amount,
+    sourceProductName,
     redeemPlace: 'スターバックス',
     merchant: 'スターバックス',
     expiresOn,
@@ -1349,8 +1357,12 @@ async function analyzeKomedaDirectForImport(urlValue) {
   if (!amount) throw new HttpError(422, 'コメダeGiftの金額を読み取れませんでした。');
   const expiresOn = extractLatestIsoDate(text + '\n' + decodeHtmlEntities(page.html));
   if (!expiresOn) throw new HttpError(422, 'コメダeGiftの有効期限を読み取れませんでした。');
+  const sourceProductName = normalizeSourceProductName(
+    genericOgValue(page.html, 'og:title') || (amount + '円 コメダコーヒー')
+  );
   return {
     product: amount + '円 コメダコーヒー',
+    sourceProductName,
     redeemPlace: 'コメダ珈琲店',
     merchant: 'コメダ珈琲店',
     expiresOn,
@@ -1491,8 +1503,12 @@ async function analyzeLawsonDirectForImport(urlValue) {
   if (!item.product) throw new HttpError(422, 'ローソンeGiftの商品名を読み取れませんでした。');
   if (!expiresOn) throw new HttpError(422, 'ローソンeGiftの有効期限を読み取れませんでした。');
 
+  const sourceProductName = normalizeSourceProductName(
+    genericOgValue(page.html, 'og:title') || item.product
+  );
   return {
     product: item.product,
+    sourceProductName,
     redeemPlace: 'ローソン',
     merchant: 'ローソン',
     expiresOn,
@@ -1626,8 +1642,12 @@ async function analyzeMisterDonutDirectForImport(urlValue) {
   if (!item.product) throw new HttpError(422, 'ミスタードーナツeGiftの商品名を読み取れませんでした。');
   if (!expiresOn) throw new HttpError(422, 'ミスタードーナツeGiftの有効期限を読み取れませんでした。');
 
+  const sourceProductName = normalizeSourceProductName(
+    genericOgValue(page.html, 'og:title') || item.product
+  );
   return {
     product: item.product,
+    sourceProductName,
     redeemPlace: 'ミスタードーナツ',
     merchant: 'ミスタードーナツ',
     expiresOn,
