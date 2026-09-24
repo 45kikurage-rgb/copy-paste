@@ -1952,6 +1952,13 @@ async function registerAutoCoupon(request, env) {
       `).bind(duplicate.expiry_id, duplicate.expiry_id).run();
     }
 
+    await saveItemReconcileStatus(
+      env,
+      duplicate.item_id,
+      'done',
+      changed ? 'repaired-by-share' : 'verified-by-share'
+    ).catch(() => {});
+
     await mergeCanonicalCouponGroups(env);
 
     return json(request, env, {
