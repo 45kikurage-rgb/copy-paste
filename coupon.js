@@ -2,7 +2,7 @@
   'use strict';
   const AUTH_KEY = 'portal-auth-ok-v1';
   const RESERVATION_KEY = 'coupon-active-reservation-v1';
-  const RECONCILE_SESSION_KEY = 'coupon-url-reconcile-20260921-v6';
+  const RECONCILE_SESSION_KEY = 'coupon-url-reconcile-20260924-v8-identity4';
   const API_BASE = String(window.COUPON_API_BASE || '').replace(/\/$/, '');
   const isUnconfigured = !API_BASE || API_BASE.includes('YOUR_SUBDOMAIN');
 
@@ -62,11 +62,11 @@
     }
 
     let totals = { processed: 0, changed: 0, merged: 0, failed: 0, done: false };
-    for (let round = 0; round < 12; round += 1) {
+    for (let round = 0; round < 20; round += 1) {
       const result = await api('/api/coupons/reconcile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 4 })
+        body: JSON.stringify({ limit: 6 })
       });
       totals.processed += Number(result.processed || 0);
       totals.changed += Number(result.changed || 0);
@@ -174,6 +174,10 @@
     const title = document.createElement('h2');
     title.className = 'coupon-name';
     title.textContent = displayCouponName(coupon.name);
+    const capacity = document.createElement('div');
+    capacity.className = 'coupon-capacity';
+    capacity.textContent = coupon.capacity ? `容量：${coupon.capacity}` : '';
+    capacity.hidden = !coupon.capacity;
     const place = document.createElement('div');
     place.className = 'coupon-place';
     place.textContent = coupon.redeemPlace ? `引換先：${coupon.redeemPlace}` : '';
@@ -213,7 +217,7 @@
     use.textContent = coupon.availableCount ? '利用する' : '予約中';
     use.disabled = !coupon.availableCount || Boolean(activeReservation);
     use.addEventListener('click', () => openReservationChoice(coupon));
-    info.append(title, place, meta, expiryList, use);
+    info.append(title, capacity, place, meta, expiryList, use);
     article.append(image, info);
     return article;
   }
