@@ -448,7 +448,7 @@ async function cleanupEmptyUrlCoupon(env, couponId) {
 
 async function ensureIdentityCoupon(env, analyzed, fallback = {}, options = {}) {
   const sourceName = normalizeSourceProductName(
-    analyzed.product || fallback.source_name || fallback.name || ''
+    analyzed.sourceProductName || analyzed.product || fallback.source_name || fallback.name || ''
   );
   const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || fallback.redeem_place || '').trim();
   const capacity = normalizeCouponCapacity(analyzed.capacity || analyzed.size || fallback.capacity || '', sourceName);
@@ -905,33 +905,9 @@ function htmlImageDescriptors(html) {
 
 function compactSevenProductNames(names) {
   const clean = names
-    .map(value => String(value || '').replace(/\s+/g, ' ').trim())
+    .map(value => String(value || '').normalize('NFKC').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
-  if (!clean.length) return '';
-  if (clean.length === 1) return clean[0];
-
-  const tokenized = clean.map(value => value.split(/\s+/));
-  const prefix = [];
-  for (let index = 0; ; index += 1) {
-    const token = tokenized[0][index];
-    if (!token || tokenized.some(tokens => tokens[index] !== token)) break;
-    prefix.push(token);
-  }
-
-  const common = prefix.join(' ').trim();
-  if (common.length >= 6) {
-    const combined = clean.join(' ').normalize('NFKC');
-    const unit = /\d+(?:\.\d+)?\s*(?:ml|mL|L)/.test(combined) ? '1本'
-      : /\d+\s*本/.test(combined) ? '1本'
-      : /\d+\s*個/.test(combined) ? '1個'
-      : '1点';
-    return `${common} いずれか${unit}`;
-  }
-
-  const unit = clean.some(value => /\d+\s*個/.test(value.normalize('NFKC'))) ? '1個'
-    : clean.some(value => /\d+(?:\.\d+)?\s*(?:ml|mL|L)|\d+\s*本/.test(value.normalize('NFKC'))) ? '1本'
-    : '1点';
-  return `${clean.join(' または ')} いずれか${unit}`;
+  return [...new Set(clean)].join(' または ');
 }
 
 function pickSevenFoodProduct(lines, descriptors) {
@@ -1086,6 +1062,7 @@ async function analyzeSevenDirectForImport(urlValue) {
 
   return {
     product,
+    sourceProductName: product,
     capacity: normalizeCouponCapacity('', product),
     redeemPlace: 'セブンイレブン',
     merchant: 'セブンイレブン',
@@ -1662,6 +1639,21 @@ async function analyzeMisterDonutDirectForImport(urlValue) {
 }
 
 async function analyzeCouponForImport(urlValue, env) {
+  const directSeven = await analyzeSevenDirectForImport(urlValue);
+  if (directSeven) return directSeven;
+
+  const directStarbucks = await analyzeStarbucksDirectForImport(urlValue);
+  if (directStarbucks) return directStarbucks;
+
+  const directKomeda = await analyzeKomedaDirectForImport(urlValue);
+  if (directKomeda) return directKomeda;
+
+  const directLawson = await analyzeLawsonDirectForImport(urlValue);
+  if (directLawson) return directLawson;
+
+  const directMisterDonut = await analyzeMisterDonutDirectForImport(urlValue);
+  if (directMisterDonut) return directMisterDonut;
+
   const detail = await fetchAnalyzerJson(env, '/api/analyze-detail', { url: urlValue, mode: 'stable' });
   if (detail.ok && detail.data?.status === 'ok') {
     return { ...detail.data, analysisMode: 'shared-analyzer' };
@@ -1769,7 +1761,7 @@ async function analyzeAutoCoupon(request, env) {
   }
 
   const analyzed = await analyzeCouponForImport(urlValue, env);
-  const sourceName = normalizeSourceProductName(analyzed.product || '');
+  const sourceName = normalizeSourceProductName(analyzed.sourceProductName || analyzed.product || '');
   const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || '').trim();
   const capacity = normalizeCouponCapacity(analyzed.capacity || analyzed.size || '', sourceName);
   const expiresOn = String(analyzed.expiresOn || '').trim();
