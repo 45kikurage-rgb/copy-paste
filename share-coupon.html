@@ -7,48 +7,89 @@
 <title>クーポン登録</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <style>
-:root{--bg:#fde0b6;--card:#fffaf1;--text:#282018;--sub:#776a5e;--border:#8c7762;--btn:#3c3026;--ok:#3f7f51;--ng:#9a3d31}
+:root{--bg:#fde0b6;--card:#fffaf1;--text:#282018;--sub:#776a5e;--border:#8c7762;--btn:#3c3026;--ok:#3f7f51;--ng:#9a3d31;--accent:#f6bf83}
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:"Yomogi","Klee One","Yu Mincho",cursive}
-body{min-height:100dvh;display:grid;place-items:center;padding:18px}
-.card{width:min(100%,520px);padding:20px;border:2px solid rgba(140,119,98,.55);border-radius:20px;background:var(--card);box-shadow:0 6px 18px rgba(88,58,31,.12);display:grid;gap:14px}
-h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-weight:700;font-size:1.04rem}
-.detail{display:grid;gap:7px;padding:12px;border:2px solid rgba(140,119,98,.35);border-radius:13px;background:#fffdf8}
-.row{display:grid;grid-template-columns:78px 1fr;gap:8px}.label{color:var(--sub);font-weight:700}.value{font-weight:700;overflow-wrap:anywhere}
-.spinner{width:42px;height:42px;margin:4px auto;border:4px solid rgba(60,48,38,.18);border-top-color:var(--btn);border-radius:50%;animation:spin .85s linear infinite}
+body{min-height:100dvh;display:grid;place-items:center;padding:16px}
+.card{width:min(100%,540px);padding:18px;border:2px solid rgba(140,119,98,.55);border-radius:20px;background:var(--card);box-shadow:0 6px 18px rgba(88,58,31,.12);display:grid;gap:13px}
+h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-weight:700;font-size:1.03rem;line-height:1.45}
+.preview{display:grid;grid-template-columns:116px minmax(0,1fr);gap:12px;align-items:start}
+.preview[hidden]{display:none}.product-image{width:116px;aspect-ratio:1;border:2px solid rgba(140,119,98,.45);border-radius:14px;background:#fff;object-fit:contain}
+.product-image[hidden]{display:none}.detail{display:grid;gap:7px;min-width:0;padding:11px;border:2px solid rgba(140,119,98,.35);border-radius:13px;background:#fffdf8}
+.row{display:grid;grid-template-columns:68px minmax(0,1fr);gap:8px}.label{color:var(--sub);font-weight:700}.value{font-weight:700;overflow-wrap:anywhere;line-height:1.45}
+.full-name{white-space:normal}.spinner{width:42px;height:42px;margin:4px auto;border:4px solid rgba(60,48,38,.18);border-top-color:var(--btn);border-radius:50%;animation:spin .85s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}.ok{color:var(--ok)}.error{color:var(--ng)}
+.rename-box{display:grid;gap:9px;padding:12px;border:2px solid rgba(140,119,98,.4);border-radius:13px;background:#fff4df}
+.rename-title{font-weight:700;line-height:1.45}.rename-note{font-size:.8rem;color:var(--sub);line-height:1.45}
+.rename-input{width:100%;min-height:46px;border:2px solid rgba(140,119,98,.55);border-radius:10px;background:#fffdf8;color:var(--text);padding:8px 10px;font:inherit;font-weight:700}
 .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.btn{min-height:48px;border:2px solid var(--btn);border-radius:11px;background:var(--btn);color:#fff;font:inherit;font-weight:700}
-.btn.soft{background:var(--card);color:var(--text)}.note{text-align:center;color:var(--sub);font-size:.82rem;line-height:1.45}
+.btn.soft{background:var(--card);color:var(--text)}.btn.ok-btn{background:var(--ok);border-color:var(--ok)}.btn.ng-btn{background:var(--card);border-color:var(--ng);color:var(--ng)}
+.note{text-align:center;color:var(--sub);font-size:.82rem;line-height:1.45}.small-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:430px){body{padding:10px}.card{padding:14px}.preview{grid-template-columns:92px minmax(0,1fr)}.product-image{width:92px}.row{grid-template-columns:58px minmax(0,1fr)}}
 </style>
 </head>
 <body>
 <main class="card">
-  <h1>クーポン自動登録</h1>
+  <h1>クーポン登録確認</h1>
   <div class="spinner" id="spinner"></div>
-  <div class="status" id="status">共有されたリンクを確認しています...</div>
-  <section class="detail" id="detail" hidden>
-    <div class="row"><div class="label">商品名</div><div class="value" id="product"></div></div>
-    <div class="row"><div class="label">引換先</div><div class="value" id="place"></div></div>
-    <div class="row"><div class="label">期限</div><div class="value" id="expiry"></div></div>
+  <div class="status" id="status">共有されたリンクを解析しています...</div>
+
+  <section class="preview" id="preview" hidden>
+    <img class="product-image" id="productImage" alt="商品画像" hidden>
+    <div class="detail">
+      <div class="row"><div class="label">商品名</div><div class="value full-name" id="product"></div></div>
+      <div class="row"><div class="label">容量</div><div class="value" id="capacity"></div></div>
+      <div class="row"><div class="label">引換先</div><div class="value" id="place"></div></div>
+      <div class="row"><div class="label">期限</div><div class="value" id="expiry"></div></div>
+    </div>
   </section>
-  <div class="actions" id="actions" hidden>
+
+  <section class="rename-box" id="renameBox" hidden>
+    <div class="rename-title">見やすいように商品名を編集しましょう</div>
+    <div class="rename-note">上の商品名はデータベースにそのまま保存します。ここで変更するのは自己利用分に表示するカード名だけです。</div>
+    <input class="rename-input" id="displayNameInput" type="text" maxlength="100" autocomplete="off" aria-label="サイト表示名">
+  </section>
+
+  <div class="actions" id="confirmActions" hidden>
+    <button class="btn ng-btn" id="ngBtn" type="button">NG</button>
+    <button class="btn ok-btn" id="okBtn" type="button">OK</button>
+  </div>
+
+  <div class="actions" id="renameActions" hidden>
+    <button class="btn soft" id="keepNameBtn" type="button">変更せず登録</button>
+    <button class="btn" id="useEditedNameBtn" type="button">この名前で登録</button>
+  </div>
+
+  <div class="small-actions" id="doneActions" hidden>
     <button class="btn soft" id="portalBtn" type="button">ポータルへ</button>
     <button class="btn" id="listBtn" type="button">自己利用分を見る</button>
   </div>
-  <div class="note" id="note">同じURLは重複登録しません。</div>
+
+  <div class="note" id="note">商品名・容量・引換先・引換期限が一致した場合だけ同じカードへ追加します。</div>
 </main>
+
 <script src="./coupon-config.js"></script>
 <script>
 (() => {
   'use strict';
+
   const MANAGER_API=String(window.COUPON_API_BASE||'').replace(/\/$/,'');
   const status=document.getElementById('status');
   const spinner=document.getElementById('spinner');
-  const detail=document.getElementById('detail');
-  const actions=document.getElementById('actions');
+  const preview=document.getElementById('preview');
+  const productImage=document.getElementById('productImage');
   const product=document.getElementById('product');
+  const capacity=document.getElementById('capacity');
   const place=document.getElementById('place');
   const expiry=document.getElementById('expiry');
+  const renameBox=document.getElementById('renameBox');
+  const displayNameInput=document.getElementById('displayNameInput');
+  const confirmActions=document.getElementById('confirmActions');
+  const renameActions=document.getElementById('renameActions');
+  const doneActions=document.getElementById('doneActions');
   const note=document.getElementById('note');
+  let sharedUrl='';
+  let analyzed=null;
+  let busy=false;
 
   function extractUrl(){
     const params=new URLSearchParams(location.search);
@@ -59,55 +100,163 @@ h1{margin:0;text-align:center;font-size:1.35rem}.status{text-align:center;font-w
     }
     return '';
   }
+
   async function jsonFetch(url,options){
     const response=await fetch(url,options);
     const data=await response.json().catch(()=>({}));
     if(!response.ok) throw new Error(data.error||`通信エラー（${response.status}）`);
     return data;
   }
-  function showResult(data,message,isError=false){
+
+  function setBusy(value,message=''){
+    busy=value;
+    spinner.hidden=!value;
+    if(message) status.textContent=message;
+    for(const button of document.querySelectorAll('button')) button.disabled=value;
+  }
+
+  function showDetails(data,showImage){
+    product.textContent=data.sourceName||data.product||'—';
+    capacity.textContent=data.capacity||'—';
+    place.textContent=data.redeemPlace||'—';
+    expiry.textContent=(data.expiresOn||'—').replace(/-/g,'/');
+    preview.hidden=false;
+
+    if(showImage&&data.productImageDataUri){
+      productImage.src=data.productImageDataUri;
+      productImage.hidden=false;
+    }else{
+      productImage.hidden=true;
+      productImage.removeAttribute('src');
+    }
+  }
+
+  function finish(message,isError=false){
     spinner.hidden=true;
     status.textContent=message;
     status.className='status '+(isError?'error':'ok');
-    if(data){
-      product.textContent=data.product||data.name||'—';
-      place.textContent=data.redeemPlace||'—';
-      expiry.textContent=(data.expiresOn||'—').replace(/-/g,'/');
-      detail.hidden=false;
-    }
-    actions.hidden=false;
+    confirmActions.hidden=true;
+    renameActions.hidden=true;
+    renameBox.hidden=true;
+    doneActions.hidden=false;
   }
-  async function run(){
-    const url=extractUrl();
-    if(!url){showResult(null,'共有されたURLを確認できませんでした。',true);return}
-    if(!MANAGER_API){showResult(null,'自己利用分APIが設定されていません。',true);return}
+
+  function cancelRegistration(){
+    spinner.hidden=true;
+    status.textContent='登録しませんでした。';
+    status.className='status';
+    confirmActions.hidden=true;
+    renameActions.hidden=true;
+    renameBox.hidden=true;
+    note.textContent='URLは登録していません。';
+    doneActions.hidden=false;
+  }
+
+  async function commit(displayName=''){
+    if(!analyzed||busy) return;
     try{
-      status.textContent='商品名・引換先・期限・画像を解析して登録しています...';
-      const registered=await jsonFetch(`${MANAGER_API}/api/coupons/register-auto`,{
+      setBusy(true,'登録しています...');
+      const result=await jsonFetch(`${MANAGER_API}/api/coupons/register-auto`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({url})
+        body:JSON.stringify({
+          url:sharedUrl,
+          sourceName:analyzed.sourceName||analyzed.product||'',
+          capacity:analyzed.capacity||'',
+          redeemPlace:analyzed.redeemPlace||'',
+          expiresOn:analyzed.expiresOn||'',
+          productImageDataUri:analyzed.productImageDataUri||null,
+          displayName
+        })
       });
-      const result={
-        product:registered.product||registered.name||'',
-        redeemPlace:registered.redeemPlace||'',
-        expiresOn:registered.expiresOn||''
-      };
-      if(registered.newCount>0){
-        showResult(result,'登録しました。');
-        note.textContent=registered.imageSaved?'商品画像も保存しました。':'商品画像を取得できなかったため仮画像で登録しました。';
-      }else{
-        showResult(result,'このURLは登録済みです。');
-        note.textContent='同じURLは追加していません。';
-      }
-      setTimeout(()=>{ location.href='./coupons.html'; },1800);
+
+      analyzed={...analyzed,...result};
+      showDetails({
+        ...analyzed,
+        sourceName:result.sourceName||analyzed.sourceName,
+        capacity:result.capacity||analyzed.capacity,
+        redeemPlace:result.redeemPlace||analyzed.redeemPlace,
+        expiresOn:result.expiresOn||analyzed.expiresOn
+      },false);
+
+      finish(`${result.displayName||result.name||'クーポン'}カードに登録しました。`);
+      note.textContent=result.matchedExisting
+        ? '既存カードへ1件追加しました。'
+        : (result.displayName&&result.sourceName&&result.displayName!==result.sourceName
+          ? `サイト表示名は「${result.displayName}」です。抽出商品名はデータベースに保持しています。`
+          : '新しいカードとして登録しました。');
     }catch(error){
-      showResult(null,error.message||'登録に失敗しました。',true);
-      note.textContent='URLはこの画面に残っています。URLと画面画像を確認後、もう一度転送してください。';
+      setBusy(false);
+      finish(error.message||'登録に失敗しました。',true);
+      note.textContent='登録は完了していません。';
     }
   }
+
+  async function run(){
+    sharedUrl=extractUrl();
+    if(!sharedUrl){finish('共有されたURLを確認できませんでした。',true);return}
+    if(!MANAGER_API){finish('自己利用分APIが設定されていません。',true);return}
+
+    try{
+      setBusy(true,'商品名・容量・引換先・引換期限を解析しています...');
+      analyzed=await jsonFetch(`${MANAGER_API}/api/coupons/analyze-auto`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({url:sharedUrl})
+      });
+      setBusy(false);
+
+      if(analyzed.status==='duplicate'){
+        showDetails(analyzed,false);
+        finish('このURLはすでに登録済みです。');
+        note.textContent=`登録先：${analyzed.displayName||analyzed.existingCard?.name||'既存'}カード`;
+        return;
+      }
+
+      if(analyzed.status==='match'){
+        showDetails(analyzed,false);
+        status.textContent=`${analyzed.existingCard?.name||analyzed.displayName||'既存'}カードに登録します。`;
+        status.className='status';
+        note.textContent='同じ商品名・容量・引換先・引換期限のカードが見つかりました。商品画像の再確認は省略します。';
+        confirmActions.hidden=false;
+        return;
+      }
+
+      showDetails(analyzed,true);
+      status.textContent='抽出した商品情報を確認してください。';
+      status.className='status';
+
+      if(analyzed.suggestRename){
+        renameBox.hidden=false;
+        displayNameInput.value=analyzed.sourceName||analyzed.product||'';
+        renameActions.hidden=false;
+        note.textContent='商品名が15文字以上のため、サイト表示名を短くすることを提案しています。';
+      }else{
+        status.textContent='新しいカードとして登録します。';
+        confirmActions.hidden=false;
+        note.textContent='DBには抽出した商品名をそのまま保存します。';
+      }
+    }catch(error){
+      setBusy(false);
+      finish(error.message||'解析に失敗しました。',true);
+      note.textContent='URLは登録していません。';
+    }
+  }
+
+  document.getElementById('okBtn').addEventListener('click',()=>commit(''));
+  document.getElementById('ngBtn').addEventListener('click',cancelRegistration);
+  document.getElementById('keepNameBtn').addEventListener('click',()=>commit(''));
+  document.getElementById('useEditedNameBtn').addEventListener('click',()=>{
+    const name=displayNameInput.value.trim();
+    if(!name){
+      displayNameInput.focus();
+      return;
+    }
+    commit(name);
+  });
   document.getElementById('portalBtn').addEventListener('click',()=>location.href='./');
   document.getElementById('listBtn').addEventListener('click',()=>location.href='./coupons.html');
+
   run();
 })();
 </script>
