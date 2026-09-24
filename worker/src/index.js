@@ -884,7 +884,7 @@ function compactSevenProductNames(names) {
 }
 
 function pickSevenFoodProduct(lines, descriptors) {
-  const generic = /^(?:引換クーポン|クーポン|対象商品|商品画像|画像|バーコード|ロゴ|ご注意|クーポンの利用期間|セブン[‐ー・\- ]?イレブン店舗で引換えられます)$/;
+  const generic = /^(?:引換クーポン|クーポン|対象商品|商品画像|画像|バーコード|ロゴ|ご注意|クーポンの利用期間|セブン[‐ー・\- ]?イレブン店舗で引換えられます|セブン[‐ー・\- ]?イレブン\s*(?:引換\s*)?クーポン)$/;
   const descriptor = descriptors
     .map(item => item.alt.replace(/\s+/g, ' ').trim())
     .filter(value => value.length >= 3 && value.length <= 120 && !generic.test(value))
@@ -1030,11 +1030,12 @@ async function analyzeSevenDirectForImport(urlValue) {
   const descriptors = htmlImageDescriptors(html);
   const product = pickSevenFoodProduct(lines, descriptors);
   const expiresOn = extractLatestIsoDate(text);
-  if (!product) throw new HttpError(422, '商品名を読み取れませんでした。');
+  if (!product || isGenericSevenProductName(product)) throw new HttpError(422, '商品名を正しく読み取れませんでした。');
   if (!expiresOn) throw new HttpError(422, '利用期限を読み取れませんでした。');
 
   return {
     product,
+    capacity: normalizeCouponCapacity('', product),
     redeemPlace: 'セブンイレブン',
     merchant: 'セブンイレブン',
     expiresOn,
@@ -1693,19 +1694,21 @@ async function registerAutoCoupon(request, env) {
   const fingerprint = await sha256Text(urlValue);
 
   const duplicate = await env.COUPON_DB.prepare(`
-    SELECT c.name, c.redeem_place, e.expires_on
+    SELECT c.name, c.redeem_place, c.capacity, e.expires_on
     FROM coupon_items i
     JOIN coupon_expiries e ON e.id = i.expiry_id
     JOIN coupons c ON c.id = e.coupon_id
     WHERE i.fingerprint = ?
     LIMIT 1
   `).bind(fingerprint).first();
+
   if (duplicate) {
     return json(request, env, {
       newCount: 0,
       duplicateCount: 1,
       name: duplicate.name,
       product: duplicate.name,
+      capacity: duplicate.capacity || '',
       redeemPlace: duplicate.redeem_place || '',
       expiresOn: duplicate.expires_on,
       imageSaved: true,
@@ -1716,11 +1719,13 @@ async function registerAutoCoupon(request, env) {
   const suppliedName = String(body.name || body.product || '').trim();
   const suppliedPlace = String(body.redeemPlace || body.merchant || '').trim();
   const suppliedExpiry = String(body.expiresOn || '').trim();
+  const suppliedCapacity = String(body.capacity || '').trim();
   const hasSuppliedAnalysis = suppliedName && suppliedPlace && /^\d{4}-\d{2}-\d{2}$/.test(suppliedExpiry);
 
   const analyzed = hasSuppliedAnalysis
     ? {
         product: suppliedName,
+        capacity: suppliedCapacity,
         redeemPlace: suppliedPlace,
         merchant: suppliedPlace,
         expiresOn: suppliedExpiry,
@@ -1730,82 +1735,17 @@ async function registerAutoCoupon(request, env) {
       }
     : await analyzeCouponForImport(urlValue, env);
 
-  const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || '').trim();
-  const name = canonicalCouponNameForStorage(String(analyzed.product || '').trim(), redeemPlace);
-  const expiresOn = String(analyzed.expiresOn || '').trim();
+  const identity = await ensureIdentityCoupon(env, analyzed);
 
-  if (!name || name === '商品名不明' || name.length > 100) throw new HttpError(422, '商品名を確認できません。');
-  if (!redeemPlace || redeemPlace.length > 60) throw new HttpError(422, '引換先を確認できません。');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(422, '利用期限を確認できません。');
-  if (expiresOn < todayInTokyo()) throw new HttpError(422, '期限切れのクーポンは登録できません。');
-
-  const now = nowSeconds();
-  const nameKey = normalizeName(`${name}\u0000${redeemPlace}`);
-
-  const existingCards = await env.COUPON_DB.prepare(`
-    SELECT id, name, name_key, cover_object_key
-    FROM coupons
-    WHERE coupon_type = 'url' AND redeem_place = ?
-    ORDER BY created_at ASC, id ASC
-  `).bind(redeemPlace).all();
-
-  let coupon = (existingCards.results || []).find(row => {
-    const canonical = canonicalCouponNameForStorage(row.name, redeemPlace);
-    return normalizeName(`${canonical}\u0000${redeemPlace}`) === nameKey;
-  }) || null;
-
-  if (!coupon) {
-    const proposedCouponId = crypto.randomUUID();
-    await env.COUPON_DB.prepare(`
-      INSERT OR IGNORE INTO coupons (id, name, name_key, coupon_type, redeem_place, created_at, updated_at)
-      VALUES (?, ?, ?, 'url', ?, ?, ?)
-    `).bind(proposedCouponId, name, nameKey, redeemPlace, now, now).run();
-
-    coupon = await env.COUPON_DB.prepare(
-      'SELECT id, name, name_key, cover_object_key FROM coupons WHERE name_key = ? AND coupon_type = ?'
-    ).bind(nameKey, 'url').first();
-  } else if (coupon.name !== name || coupon.name_key !== nameKey) {
-    // 同義の旧カードを見つけた場合は、新しいカードを作らずそのカードを正規名へ寄せる。
-    // 同じ正規キーの別カードが残っている場合は、直後のmaintenanceで安全に統合される。
-    const conflict = await env.COUPON_DB.prepare(
-      'SELECT id FROM coupons WHERE name_key = ? AND coupon_type = ? AND id <> ? LIMIT 1'
-    ).bind(nameKey, 'url', coupon.id).first();
-    if (!conflict) {
-      await env.COUPON_DB.prepare('UPDATE coupons SET name = ?, name_key = ?, updated_at = ? WHERE id = ?')
-        .bind(name, nameKey, now, coupon.id).run();
-      coupon = { ...coupon, name, name_key: nameKey };
-    }
-  }
-
-  if (!coupon) throw new HttpError(500, 'クーポンを作成できませんでした。');
-
-  const proposedExpiryId = crypto.randomUUID();
-  await env.COUPON_DB.prepare(`
-    INSERT OR IGNORE INTO coupon_expiries (id, coupon_id, expires_on, created_at) VALUES (?, ?, ?, ?)
-  `).bind(proposedExpiryId, coupon.id, expiresOn, now).run();
-  const expiry = await env.COUPON_DB.prepare(
-    'SELECT id FROM coupon_expiries WHERE coupon_id = ? AND expires_on = ?'
-  ).bind(coupon.id, expiresOn).first();
-  if (!expiry) throw new HttpError(500, '利用期限を保存できませんでした。');
-
-  let imageSaved = Boolean(coupon.cover_object_key);
-  if (!coupon.cover_object_key && analyzed.productImageDataUri) {
-    const image = decodeImageDataUri(analyzed.productImageDataUri);
-    if (image) {
-      const imageHash = await sha256Buffer(image.bytes);
-      const coverKey = `covers/${coupon.id}/auto-${imageHash}.${extensionFor(image.mimeType)}`;
-      await env.COUPON_IMAGES.put(coverKey, image.bytes, { httpMetadata: { contentType: image.mimeType } });
-      await env.COUPON_DB.prepare('UPDATE coupons SET cover_object_key = ?, updated_at = ? WHERE id = ?')
-        .bind(coverKey, now, coupon.id).run();
-      imageSaved = true;
-    }
+  if (identity.expiresOn < todayInTokyo()) {
+    throw new HttpError(422, '期限切れのクーポンは登録できません。');
   }
 
   const result = await env.COUPON_DB.prepare(`
     INSERT OR IGNORE INTO coupon_items
       (id, expiry_id, item_type, url_value, object_key, fingerprint, original_name, mime_type, created_at)
     VALUES (?, ?, 'url', ?, NULL, ?, NULL, NULL, ?)
-  `).bind(crypto.randomUUID(), expiry.id, urlValue, fingerprint, now).run();
+  `).bind(crypto.randomUUID(), identity.expiryId, urlValue, fingerprint, nowSeconds()).run();
 
   const newCount = Number(result.meta?.changes || 0);
   await mergeCanonicalCouponGroups(env);
@@ -1813,11 +1753,12 @@ async function registerAutoCoupon(request, env) {
   return json(request, env, {
     newCount,
     duplicateCount: newCount ? 0 : 1,
-    name,
-    product: name,
-    redeemPlace,
-    expiresOn,
-    imageSaved,
+    name: identity.name,
+    product: identity.name,
+    capacity: identity.capacity,
+    redeemPlace: identity.redeemPlace,
+    expiresOn: identity.expiresOn,
+    imageSaved: true,
     analysisMode: analyzed.analysisMode || 'detail'
   }, newCount ? 201 : 200);
 }
