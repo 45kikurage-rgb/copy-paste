@@ -266,7 +266,13 @@ async function mergeCanonicalCouponGroups(env) {
       if (Number(activeReservation?.count || 0) > 0) continue;
     }
 
-    const target = group.rows.find(row => row.name_key === group.identityKey) || group.rows[0];
+    const target = group.rows.find(row =>
+      row.name_key === group.identityKey
+      && normalizeSourceProductName(row.name) !== normalizeSourceProductName(row.source_name)
+    )
+      || group.rows.find(row => normalizeSourceProductName(row.name) !== normalizeSourceProductName(row.source_name))
+      || group.rows.find(row => row.name_key === group.identityKey)
+      || group.rows[0];
     let targetCover = target.cover_object_key || null;
     const targetExpiry = await env.COUPON_DB.prepare(
       'SELECT id FROM coupon_expiries WHERE coupon_id = ? AND expires_on = ? LIMIT 1'
@@ -479,7 +485,10 @@ async function ensureIdentityCoupon(env, analyzed, fallback = {}, options = {}) 
       || (fallbackHasKnownAlias ? String(fallback.name || '').trim() : '')
       || sourceName;
 
-    if (!displayName || displayName.length > 100) throw new HttpError(422, 'サイト表示名が正しくありません。');
+    if (!displayName) throw new HttpError(422, 'サイト表示名が正しくありません。');
+    if (requestedDisplayName && requestedDisplayName.length > 100) {
+      throw new HttpError(422, 'サイト表示名は100文字以内にしてください。');
+    }
 
     const id = crypto.randomUUID();
     await env.COUPON_DB.prepare(`
