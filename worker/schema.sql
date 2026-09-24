@@ -3,6 +3,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS coupons (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  source_name TEXT NOT NULL DEFAULT '',
   name_key TEXT NOT NULL,
   coupon_type TEXT NOT NULL CHECK (coupon_type IN ('url', 'image')),
   redeem_place TEXT NOT NULL DEFAULT '',
