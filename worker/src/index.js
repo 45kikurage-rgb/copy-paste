@@ -1,7 +1,7 @@
 const RESERVATION_SECONDS = 10 * 60;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
-const URL_RECONCILE_VERSION = '2026-09-24-v8-identity4';
+const URL_RECONCILE_VERSION = '2026-09-24-v9-source-display';
 
 export default {
   async fetch(request, env) {
@@ -89,6 +89,17 @@ async function ensureCouponSchema(env) {
     }
   }
 
+  if (!columns.has('source_name')) {
+    try {
+      await env.COUPON_DB.prepare("ALTER TABLE coupons ADD COLUMN source_name TEXT NOT NULL DEFAULT ''").run();
+    } catch (error) {
+      const message = String(error?.message || error || '');
+      if (!/duplicate column|already exists/i.test(message)) throw error;
+    }
+  }
+
+  await env.COUPON_DB.prepare("UPDATE coupons SET source_name = name WHERE source_name = '' OR source_name IS NULL").run();
+
   await env.COUPON_DB.prepare(`
     CREATE TABLE IF NOT EXISTS coupon_url_reconcile (
       coupon_id TEXT NOT NULL,
@@ -174,10 +185,15 @@ function normalizeCouponCapacity(explicitValue = '', productName = '') {
   return found.join(' / ');
 }
 
-function couponIdentityKey(name, capacity, redeemPlace, expiresOn) {
+function normalizeSourceProductName(value) {
+  return String(value || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
+}
+
+function couponIdentityKey(sourceName, capacity, redeemPlace, expiresOn) {
+  const fullName = normalizeSourceProductName(sourceName);
   return normalizeName([
-    canonicalCouponNameForStorage(name, redeemPlace),
-    normalizeCouponCapacity(capacity, name),
+    fullName,
+    normalizeCouponCapacity(capacity, fullName),
     String(redeemPlace || '').trim(),
     String(expiresOn || '').trim()
   ].join('\u0000'));
