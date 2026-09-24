@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v26-coupon-confirm-name';
+const CACHE='url-format-shisa-v27-coupon-fullname-redo';
 const CORE=[
   './',
   './index.html',
