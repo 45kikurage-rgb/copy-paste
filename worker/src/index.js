@@ -154,19 +154,23 @@ function canonicalCouponNameForStorage(name, redeemPlace = '') {
 }
 
 function normalizeCouponCapacity(explicitValue = '', productName = '') {
-  const source = String(explicitValue || productName || '').normalize('NFKC');
   const found = [];
 
-  for (const match of source.matchAll(/(\d+(?:\.\d+)?)\s*(ml|mL|L|g|kg)\b/g)) {
-    let unit = match[2];
-    if (/^ml$/i.test(unit)) unit = 'ml';
-    else if (/^kg$/i.test(unit)) unit = 'kg';
-    else if (/^g$/i.test(unit)) unit = 'g';
-    else unit = 'L';
-    const label = `${match[1]}${unit}`;
-    if (!found.includes(label)) found.push(label);
-  }
+  const collect = value => {
+    const source = String(value || '').normalize('NFKC');
+    for (const match of source.matchAll(/(\d+(?:\.\d+)?)\s*(ml|mL|L|g|kg)\b/g)) {
+      let unit = match[2];
+      if (/^ml$/i.test(unit)) unit = 'ml';
+      else if (/^kg$/i.test(unit)) unit = 'kg';
+      else if (/^g$/i.test(unit)) unit = 'g';
+      else unit = 'L';
+      const label = `${match[1]}${unit}`;
+      if (!found.includes(label)) found.push(label);
+    }
+  };
 
+  collect(explicitValue);
+  if (!found.length) collect(productName);
   return found.join(' / ');
 }
 
@@ -182,8 +186,8 @@ function couponIdentityKey(name, capacity, redeemPlace, expiresOn) {
 function isGenericSevenProductName(value) {
   const text = String(value || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
   if (!text) return true;
-  return /^(?:セブン[‐ー・\- ]?イレブン\s*)?(?:引換\s*)?クーポン$/i.test(text)
-    || /^セブン[‐ー・\- ]?イレブン.*クーポン$/i.test(text)
+  return /^(?:セブン\s*[‐ー・\-]?\s*イレブン\s*)?(?:引換\s*)?クーポン$/i.test(text)
+    || /^セブン\s*[‐ー・\-]?\s*イレブン.*クーポン$/i.test(text)
     || /^(?:商品|対象商品|商品画像|引換クーポン)$/i.test(text);
 }
 
@@ -885,7 +889,7 @@ function compactSevenProductNames(names) {
 }
 
 function pickSevenFoodProduct(lines, descriptors) {
-  const generic = /^(?:引換クーポン|クーポン|対象商品|商品画像|画像|バーコード|ロゴ|ご注意|クーポンの利用期間|セブン[‐ー・\- ]?イレブン店舗で引換えられます|セブン[‐ー・\- ]?イレブン\s*(?:引換\s*)?クーポン)$/;
+  const generic = /^(?:引換クーポン|クーポン|対象商品|商品画像|画像|バーコード|ロゴ|ご注意|クーポンの利用期間|セブン\s*[‐ー・\-]?\s*イレブン店舗で引換えられます|セブン\s*[‐ー・\-]?\s*イレブン\s*(?:引換\s*)?クーポン)$/;
   const descriptor = descriptors
     .map(item => item.alt.replace(/\s+/g, ' ').trim())
     .filter(value => value.length >= 3 && value.length <= 120 && !generic.test(value))
