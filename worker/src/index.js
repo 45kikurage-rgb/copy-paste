@@ -215,7 +215,7 @@ async function ensureCouponMaintenance(env) {
 
 async function mergeCanonicalCouponGroups(env) {
   const rowsResult = await env.COUPON_DB.prepare(`
-    SELECT c.id, c.name, c.name_key, c.coupon_type, c.redeem_place, c.capacity,
+    SELECT c.id, c.name, c.source_name, c.name_key, c.coupon_type, c.redeem_place, c.capacity,
            c.cover_object_key, c.created_at,
            MIN(e.expires_on) AS expires_on,
            COUNT(DISTINCT e.id) AS expiry_count
@@ -230,14 +230,15 @@ async function mergeCanonicalCouponGroups(env) {
   const groups = new Map();
 
   for (const row of rows) {
-    // 期限が複数ある旧カードは、item-level reconciliationで先に分割する。
     if (Number(row.expiry_count || 0) !== 1 || !row.expires_on) continue;
 
-    const canonicalName = canonicalCouponNameForStorage(row.name, row.redeem_place);
-    const capacity = normalizeCouponCapacity(row.capacity, canonicalName);
-    const identityKey = couponIdentityKey(canonicalName, capacity, row.redeem_place, row.expires_on);
+    const sourceName = normalizeSourceProductName(row.source_name || row.name);
+    if (!sourceName) continue;
+
+    const capacity = normalizeCouponCapacity(row.capacity, sourceName);
+    const identityKey = couponIdentityKey(sourceName, capacity, row.redeem_place, row.expires_on);
     const group = groups.get(identityKey) || {
-      canonicalName,
+      sourceName,
       capacity,
       redeemPlace: row.redeem_place || '',
       expiresOn: row.expires_on,
@@ -299,11 +300,11 @@ async function mergeCanonicalCouponGroups(env) {
 
     await env.COUPON_DB.prepare(`
       UPDATE coupons
-      SET name = ?, name_key = ?, redeem_place = ?, capacity = ?,
+      SET source_name = ?, name_key = ?, redeem_place = ?, capacity = ?,
           cover_object_key = COALESCE(?, cover_object_key), updated_at = ?
       WHERE id = ?
     `).bind(
-      group.canonicalName,
+      group.sourceName,
       group.identityKey,
       group.redeemPlace,
       group.capacity,
