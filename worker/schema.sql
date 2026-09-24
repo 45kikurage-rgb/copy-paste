@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS coupons (
   name_key TEXT NOT NULL,
   coupon_type TEXT NOT NULL CHECK (coupon_type IN ('url', 'image')),
   redeem_place TEXT NOT NULL DEFAULT '',
+  capacity TEXT NOT NULL DEFAULT '',
   cover_object_key TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -69,4 +70,14 @@ CREATE TABLE IF NOT EXISTS coupon_url_reconcile (
   message TEXT,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (coupon_id, version)
+);
+
+
+CREATE TABLE IF NOT EXISTS coupon_item_reconcile (
+  item_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  status TEXT NOT NULL,
+  message TEXT,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (item_id, version)
 );
