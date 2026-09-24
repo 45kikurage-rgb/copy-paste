@@ -208,6 +208,14 @@ function isGenericSevenProductName(value) {
     || /^(?:商品|対象商品|商品画像|引換クーポン)$/i.test(text);
 }
 
+function isGenericCouponDisplayName(value) {
+  const text = normalizeSourceProductName(value);
+  if (!text) return true;
+  if (isGenericSevenProductName(text)) return true;
+  return /^(?:ファミリーマート|ローソン|ミスタードーナツ|ミスド|スターバックス|スタバ|コメダ(?:珈琲店|コーヒー)?)\s*(?:引換\s*)?(?:eGift\s*)?クーポン$/i.test(text)
+    || /^(?:引換|商品)?\s*クーポン$/i.test(text);
+}
+
 async function ensureCouponMaintenance(env) {
   // 件数が少ない自己利用分では、毎回軽く整合性を確認する。
   // これにより、登録直後にできた旧名称/新名称の重複カードも次回表示で自動統合される。
@@ -479,10 +487,9 @@ async function ensureIdentityCoupon(env, analyzed, fallback = {}, options = {}) 
 
   if (!coupon) {
     const requestedDisplayName = String(options.displayName || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
-    const fallbackHasKnownAlias = fallback.source_name
-      && normalizeSourceProductName(fallback.source_name) !== normalizeSourceProductName(fallback.name);
+    const fallbackDisplayName = String(fallback.name || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
     const displayName = requestedDisplayName
-      || (fallbackHasKnownAlias ? String(fallback.name || '').trim() : '')
+      || (!isGenericCouponDisplayName(fallbackDisplayName) ? fallbackDisplayName : '')
       || sourceName;
 
     if (!displayName) throw new HttpError(422, 'サイト表示名が正しくありません。');
