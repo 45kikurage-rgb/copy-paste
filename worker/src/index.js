@@ -608,7 +608,7 @@ async function listCoupons(request, env) {
   const now = nowSeconds();
   const today = todayInTokyo();
   const result = await env.COUPON_DB.prepare(`
-    SELECT c.id, c.name, c.coupon_type, c.redeem_place, c.cover_object_key,
+    SELECT c.id, c.name, c.coupon_type, c.redeem_place, c.capacity, c.cover_object_key,
            e.expires_on,
            COUNT(i.id) AS remaining_count,
            SUM(CASE WHEN i.reservation_id IS NULL OR i.reservation_expires_at <= ? THEN 1 ELSE 0 END) AS available_count
@@ -627,6 +627,7 @@ async function listCoupons(request, env) {
         id: row.id,
         name: canonicalCouponNameForStorage(row.name, row.redeem_place || ''),
         redeemPlace: row.redeem_place || '',
+        capacity: row.capacity || '',
         type: row.coupon_type,
         coverUrl: `${new URL(request.url).origin}/api/coupons/${encodeURIComponent(row.id)}/cover?v=${encodeURIComponent(row.cover_object_key || '')}`,
         remainingCount: 0,
