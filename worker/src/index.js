@@ -10,7 +10,6 @@ export default {
       if (request.method === 'OPTIONS') return corsResponse(request, env, new Response(null, { status: 204 }));
       if (!isOriginAllowed(request, env)) return json(request, env, { error: 'このサイトからは利用できません。' }, 403);
       await ensureCouponSchema(env);
-      await ensureCouponMaintenance(env);
 
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/+$/, '') || '/';
@@ -1959,8 +1958,6 @@ async function registerAutoCoupon(request, env) {
       changed ? 'repaired-by-share' : 'verified-by-share'
     ).catch(() => {});
 
-    await mergeCanonicalCouponGroups(env);
-
     return json(request, env, {
       newCount: 0,
       duplicateCount: 1,
@@ -1985,8 +1982,6 @@ async function registerAutoCoupon(request, env) {
   `).bind(crypto.randomUUID(), identity.expiryId, urlValue, fingerprint, nowSeconds()).run();
 
   const newCount = Number(result.meta?.changes || 0);
-  await mergeCanonicalCouponGroups(env);
-
   return json(request, env, {
     newCount,
     duplicateCount: newCount ? 0 : 1,
