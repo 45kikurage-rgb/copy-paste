@@ -445,41 +445,55 @@ async function cleanupEmptyUrlCoupon(env, couponId) {
   }
 }
 
-async function ensureIdentityCoupon(env, analyzed, fallback = {}) {
+async function ensureIdentityCoupon(env, analyzed, fallback = {}, options = {}) {
+  const sourceName = normalizeSourceProductName(
+    analyzed.product || fallback.source_name || fallback.name || ''
+  );
   const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || fallback.redeem_place || '').trim();
-  const name = canonicalCouponNameForStorage(String(analyzed.product || fallback.name || '').trim(), redeemPlace);
-  const capacity = normalizeCouponCapacity(analyzed.capacity || analyzed.size || fallback.capacity || '', name);
+  const capacity = normalizeCouponCapacity(analyzed.capacity || analyzed.size || fallback.capacity || '', sourceName);
   const expiresOn = String(analyzed.expiresOn || fallback.expires_on || '').trim();
 
-  if (!name || name === '商品名不明' || isGenericSevenProductName(name)) {
+  if (!sourceName || sourceName === '商品名不明' || isGenericSevenProductName(sourceName)) {
     throw new HttpError(422, '商品名を正しく確認できません。');
   }
   if (!redeemPlace) throw new HttpError(422, '引換先を確認できません。');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(422, '利用期限を確認できません。');
 
-  const nameKey = couponIdentityKey(name, capacity, redeemPlace, expiresOn);
+  const nameKey = couponIdentityKey(sourceName, capacity, redeemPlace, expiresOn);
   let coupon = await env.COUPON_DB.prepare(`
-    SELECT id, name, name_key, redeem_place, capacity, cover_object_key
+    SELECT id, name, source_name, name_key, redeem_place, capacity, cover_object_key
     FROM coupons
     WHERE name_key = ? AND coupon_type = 'url'
     LIMIT 1
   `).bind(nameKey).first();
 
   const now = nowSeconds();
+  let created = false;
+
   if (!coupon) {
+    const requestedDisplayName = String(options.displayName || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
+    const fallbackHasKnownAlias = fallback.source_name
+      && normalizeSourceProductName(fallback.source_name) !== normalizeSourceProductName(fallback.name);
+    const displayName = requestedDisplayName
+      || (fallbackHasKnownAlias ? String(fallback.name || '').trim() : '')
+      || sourceName;
+
+    if (!displayName || displayName.length > 100) throw new HttpError(422, 'サイト表示名が正しくありません。');
+
     const id = crypto.randomUUID();
     await env.COUPON_DB.prepare(`
       INSERT OR IGNORE INTO coupons
-        (id, name, name_key, coupon_type, redeem_place, capacity, created_at, updated_at)
-      VALUES (?, ?, ?, 'url', ?, ?, ?, ?)
-    `).bind(id, name, nameKey, redeemPlace, capacity, now, now).run();
+        (id, name, source_name, name_key, coupon_type, redeem_place, capacity, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'url', ?, ?, ?, ?)
+    `).bind(id, displayName, sourceName, nameKey, redeemPlace, capacity, now, now).run();
 
     coupon = await env.COUPON_DB.prepare(`
-      SELECT id, name, name_key, redeem_place, capacity, cover_object_key
+      SELECT id, name, source_name, name_key, redeem_place, capacity, cover_object_key
       FROM coupons
       WHERE name_key = ? AND coupon_type = 'url'
       LIMIT 1
     `).bind(nameKey).first();
+    created = Boolean(coupon && coupon.id === id);
   }
 
   if (!coupon) throw new HttpError(500, 'クーポンカードを作成できませんでした。');
@@ -507,12 +521,24 @@ async function ensureIdentityCoupon(env, analyzed, fallback = {}) {
 
   await env.COUPON_DB.prepare(`
     UPDATE coupons
-    SET name = ?, name_key = ?, redeem_place = ?, capacity = ?,
+    SET source_name = ?, name_key = ?, redeem_place = ?, capacity = ?,
         cover_object_key = COALESCE(?, cover_object_key), updated_at = ?
     WHERE id = ?
-  `).bind(name, nameKey, redeemPlace, capacity, coverObjectKey, now, coupon.id).run();
+  `).bind(sourceName, nameKey, redeemPlace, capacity, coverObjectKey, now, coupon.id).run();
 
-  return { couponId: coupon.id, expiryId: expiry.id, name, capacity, redeemPlace, expiresOn, nameKey };
+  return {
+    couponId: coupon.id,
+    expiryId: expiry.id,
+    sourceName,
+    name: coupon.name,
+    displayName: coupon.name,
+    capacity,
+    redeemPlace,
+    expiresOn,
+    nameKey,
+    created,
+    imageSaved: Boolean(coverObjectKey)
+  };
 }
 
 async function reconcileOneExistingUrlItem(env, row) {
@@ -521,7 +547,7 @@ async function reconcileOneExistingUrlItem(env, row) {
 
   const changed = row.coupon_id !== identity.couponId
     || row.expiry_id !== identity.expiryId
-    || row.name !== identity.name
+    || normalizeSourceProductName(row.source_name || row.name) !== identity.sourceName
     || String(row.capacity || '') !== identity.capacity
     || String(row.redeem_place || '') !== identity.redeemPlace
     || String(row.expires_on || '') !== identity.expiresOn;
@@ -555,7 +581,7 @@ async function reconcileExistingUrlCoupons(request, env) {
   const candidates = await env.COUPON_DB.prepare(`
     SELECT i.id AS item_id, i.url_value, i.expiry_id,
            e.expires_on,
-           c.id AS coupon_id, c.name, c.redeem_place, c.capacity, c.cover_object_key, c.created_at
+           c.id AS coupon_id, c.name, c.source_name, c.redeem_place, c.capacity, c.cover_object_key, c.created_at
     FROM coupon_items i
     JOIN coupon_expiries e ON e.id = i.expiry_id
     JOIN coupons c ON c.id = e.coupon_id
@@ -592,6 +618,7 @@ async function reconcileExistingUrlCoupons(request, env) {
         status: 'done',
         beforeName: row.name,
         afterName: result.name,
+        sourceName: result.sourceName,
         capacity: result.capacity,
         expiresOn: result.expiresOn
       });
@@ -629,7 +656,7 @@ async function listCoupons(request, env) {
   const now = nowSeconds();
   const today = todayInTokyo();
   const result = await env.COUPON_DB.prepare(`
-    SELECT c.id, c.name, c.coupon_type, c.redeem_place, c.capacity, c.cover_object_key,
+    SELECT c.id, c.name, c.source_name, c.coupon_type, c.redeem_place, c.capacity, c.cover_object_key,
            e.expires_on,
            COUNT(i.id) AS remaining_count,
            SUM(CASE WHEN i.reservation_id IS NULL OR i.reservation_expires_at <= ? THEN 1 ELSE 0 END) AS available_count
@@ -646,7 +673,8 @@ async function listCoupons(request, env) {
     if (!map.has(row.id)) {
       map.set(row.id, {
         id: row.id,
-        name: canonicalCouponNameForStorage(row.name, row.redeem_place || ''),
+        name: row.name,
+        sourceName: row.source_name || row.name,
         redeemPlace: row.redeem_place || '',
         capacity: row.capacity || '',
         type: row.coupon_type,
@@ -1824,9 +1852,9 @@ async function registerCoupon(request, env) {
   const nameKey = normalizeName(name);
   const couponId = crypto.randomUUID();
   await env.COUPON_DB.prepare(`
-    INSERT OR IGNORE INTO coupons (id, name, name_key, coupon_type, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).bind(couponId, name, nameKey, type, now, now).run();
+    INSERT OR IGNORE INTO coupons (id, name, source_name, name_key, coupon_type, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(couponId, name, name, nameKey, type, now, now).run();
   const coupon = await env.COUPON_DB.prepare(
     'SELECT id, cover_object_key FROM coupons WHERE name_key = ? AND coupon_type = ?'
   ).bind(nameKey, type).first();
