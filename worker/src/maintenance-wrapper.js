@@ -29,7 +29,7 @@ async function cleanupExpiredCoupons(env) {
     SELECT i.object_key
     FROM coupon_items i
     JOIN coupon_expiries e ON e.id = i.expiry_id
-    WHERE e.expires_on < ? AND i.object_key IS NOT NULL
+    WHERE e.expires_on <> '' AND e.expires_on < ? AND i.object_key IS NOT NULL
   `).bind(today).all();
 
   const orphanCovers = await env.COUPON_DB.prepare(`
@@ -38,16 +38,16 @@ async function cleanupExpiredCoupons(env) {
     WHERE c.cover_object_key IS NOT NULL
       AND NOT EXISTS (
         SELECT 1 FROM coupon_expiries e
-        WHERE e.coupon_id = c.id AND e.expires_on >= ?
+        WHERE e.coupon_id = c.id AND (e.expires_on = '' OR e.expires_on >= ?)
       )
   `).bind(today).all();
 
   await env.COUPON_DB.batch([
     env.COUPON_DB.prepare(`
       DELETE FROM coupon_items
-      WHERE expiry_id IN (SELECT id FROM coupon_expiries WHERE expires_on < ?)
+      WHERE expiry_id IN (SELECT id FROM coupon_expiries WHERE expires_on <> '' AND expires_on < ?)
     `).bind(today),
-    env.COUPON_DB.prepare('DELETE FROM coupon_expiries WHERE expires_on < ?').bind(today),
+    env.COUPON_DB.prepare('DELETE FROM coupon_expiries WHERE expires_on <> '' AND expires_on < ?').bind(today),
     env.COUPON_DB.prepare(`
       DELETE FROM reservations
       WHERE coupon_id IN (
