@@ -47,7 +47,7 @@ async function cleanupExpiredCoupons(env) {
       DELETE FROM coupon_items
       WHERE expiry_id IN (SELECT id FROM coupon_expiries WHERE expires_on <> '' AND expires_on < ?)
     `).bind(today),
-    env.COUPON_DB.prepare('DELETE FROM coupon_expiries WHERE expires_on <> '' AND expires_on < ?').bind(today),
+    env.COUPON_DB.prepare("DELETE FROM coupon_expiries WHERE expires_on <> '' AND expires_on < ?").bind(today),
     env.COUPON_DB.prepare(`
       DELETE FROM reservations
       WHERE coupon_id IN (
