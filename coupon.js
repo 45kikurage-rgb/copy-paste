@@ -111,7 +111,7 @@
     title.textContent = displayCouponName(coupon.name);
     const capacity = document.createElement('div');
     capacity.className = 'coupon-capacity';
-    capacity.textContent = coupon.capacity ? `容量：${coupon.capacity}` : '';
+    capacity.textContent = coupon.capacity ? (coupon.capacity.includes('ポイント') ? `ポイント：${coupon.capacity.replace(/ポイント$/,'')}` : `容量：${coupon.capacity}`) : '';
     capacity.hidden = !coupon.capacity;
     const place = document.createElement('div');
     place.className = 'coupon-place';
@@ -158,6 +158,7 @@
   }
 
   function formatDate(value) {
+    if (!value) return 'なし';
     const [year, month, day] = value.split('-');
     return `${year}/${month}/${day}`;
   }
