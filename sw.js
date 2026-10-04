@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v28-coupon-no-auto-update';
+const CACHE='url-format-shisa-v29-giftee-grouping';
 const CORE=[
   './',
   './index.html',
