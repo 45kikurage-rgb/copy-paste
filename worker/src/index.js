@@ -2,6 +2,7 @@ const RESERVATION_SECONDS = 10 * 60;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
 const URL_RECONCILE_VERSION = '2026-09-24-v9-source-display';
+const COUPON_MANAGER_VERSION = '2026-10-04-giftee-grouping-v1';
 
 export default {
   async fetch(request, env) {
@@ -16,7 +17,7 @@ export default {
       await releaseExpired(env);
 
       if (request.method === 'GET' && path === '/api/health') {
-        return json(request, env, { ok: true, reservationMinutes: 10 });
+        return json(request, env, { ok: true, reservationMinutes: 10, version: COUPON_MANAGER_VERSION });
       }
       if (request.method === 'GET' && path === '/api/coupons') return await listCoupons(request, env);
       if (request.method === 'POST' && path === '/api/coupons/reconcile') return await reconcileExistingUrlCoupons(request, env);
