@@ -178,7 +178,7 @@ function normalizeCouponCapacity(explicitValue = '', productName = '') {
       const label = `${match[1]}${unit}`;
       if (!found.includes(label)) found.push(label);
     }
-    for (const match of source.matchAll(/(\d+)\s*(?:ギフト\s*)?(?:ポイント|pt)\b/gi)) {
+    for (const match of source.matchAll(/(\d+)\s*(?:ギフト\s*)?(?:ポイント|pt\b)/gi)) {
       const label = `${match[1]}ポイント`;
       if (!found.includes(label)) found.push(label);
     }
