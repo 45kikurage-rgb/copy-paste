@@ -64,7 +64,7 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
     <button class="btn" id="listBtn" type="button">自己利用分を見る</button>
   </div>
 
-  <div class="note" id="note">商品名・容量・引換先・引換期限が一致した場合だけ同じカードへ追加します。</div>
+  <div class="note" id="note">判定ルールが一致した場合だけ同じカードへ追加します。えらべるPayは金額をまとめ、giftee Boxはポイントごとに分けます。</div>
 </main>
 
 <script src="./coupon-config.js"></script>
@@ -238,7 +238,7 @@ h1{margin:0;text-align:center;font-size:1.3rem}.status{text-align:center;font-we
     if(!MANAGER_API){finish('自己利用分APIが設定されていません。',true);return}
 
     try{
-      setBusy(true,'商品名全文・容量・引換先・引換期限を解析しています...');
+      setBusy(true,'商品・ギフト種別を解析しています...');
 
       analyzed=await jsonFetch(`${MANAGER_API}/api/coupons/analyze-auto`,{
         method:'POST',
