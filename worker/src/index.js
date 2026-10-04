@@ -2,6 +2,7 @@ const RESERVATION_SECONDS = 10 * 60;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
 const URL_RECONCILE_VERSION = '2026-09-24-v9-source-display';
+const COUPON_MANAGER_VERSION = '2026-10-04-giftee-grouping-v1';
 
 export default {
   async fetch(request, env) {
@@ -16,7 +17,7 @@ export default {
       await releaseExpired(env);
 
       if (request.method === 'GET' && path === '/api/health') {
-        return json(request, env, { ok: true, reservationMinutes: 10 });
+        return json(request, env, { ok: true, reservationMinutes: 10, version: COUPON_MANAGER_VERSION });
       }
       if (request.method === 'GET' && path === '/api/coupons') return await listCoupons(request, env);
       if (request.method === 'POST' && path === '/api/coupons/reconcile') return await reconcileExistingUrlCoupons(request, env);
@@ -178,6 +179,10 @@ function normalizeCouponCapacity(explicitValue = '', productName = '') {
       const label = `${match[1]}${unit}`;
       if (!found.includes(label)) found.push(label);
     }
+    for (const match of source.matchAll(/(\d+)\s*(?:ギフト\s*)?(?:ポイント|pt\b)/gi)) {
+      const label = `${match[1]}ポイント`;
+      if (!found.includes(label)) found.push(label);
+    }
   };
 
   collect(explicitValue);
@@ -187,6 +192,36 @@ function normalizeCouponCapacity(explicitValue = '', productName = '') {
 
 function normalizeSourceProductName(value) {
   return String(value || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
+}
+
+export function normalizeAnalyzedCouponIdentity(analyzed = {}, fallback = {}) {
+  const site = String(analyzed.site || '').normalize('NFKC').trim().toLowerCase();
+  const kind = String(analyzed.kind || '').normalize('NFKC').trim().toLowerCase();
+  const boxCategory = String(analyzed.boxCategory || '').normalize('NFKC').trim().toLowerCase();
+  const isGifteeBox = site === 'giftee_box' && kind === 'box';
+  const isEraberuPay = isGifteeBox && boxCategory === 'eraberu_pay';
+  const isAmountSplitGifteeBox = isGifteeBox && boxCategory === 'giftee_box';
+
+  let sourceName = normalizeSourceProductName(
+    analyzed.sourceProductName || analyzed.groupName || analyzed.product || fallback.source_name || fallback.name || ''
+  );
+  if (isEraberuPay) sourceName = 'えらべるPay';
+  else if (isAmountSplitGifteeBox) sourceName = 'giftee Box';
+
+  const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || fallback.redeem_place || '').trim();
+
+  let capacitySource = analyzed.groupSpecification || analyzed.capacity || analyzed.size || fallback.capacity || '';
+  if (isEraberuPay) capacitySource = '';
+  if (isAmountSplitGifteeBox && !analyzed.groupSpecification) {
+    const balance = Number(analyzed.balance);
+    capacitySource = Number.isFinite(balance) && balance >= 0
+      ? `${balance}${analyzed.balanceUnit || 'ポイント'}`
+      : capacitySource;
+  }
+  const capacity = normalizeCouponCapacity(capacitySource, sourceName);
+  const expiresOn = String(analyzed.expiresOn || fallback.expires_on || '').trim();
+
+  return { sourceName, redeemPlace, capacity, expiresOn, isGifteeBox, boxCategory };
 }
 
 function couponIdentityKey(sourceName, capacity, redeemPlace, expiresOn) {
@@ -238,7 +273,7 @@ async function mergeCanonicalCouponGroups(env) {
   const groups = new Map();
 
   for (const row of rows) {
-    if (Number(row.expiry_count || 0) !== 1 || !row.expires_on) continue;
+    if (Number(row.expiry_count || 0) !== 1) continue;
 
     const sourceName = normalizeSourceProductName(row.source_name || row.name);
     if (!sourceName) continue;
@@ -460,18 +495,14 @@ async function cleanupEmptyUrlCoupon(env, couponId) {
 }
 
 async function ensureIdentityCoupon(env, analyzed, fallback = {}, options = {}) {
-  const sourceName = normalizeSourceProductName(
-    analyzed.sourceProductName || analyzed.product || fallback.source_name || fallback.name || ''
-  );
-  const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || fallback.redeem_place || '').trim();
-  const capacity = normalizeCouponCapacity(analyzed.capacity || analyzed.size || fallback.capacity || '', sourceName);
-  const expiresOn = String(analyzed.expiresOn || fallback.expires_on || '').trim();
+  const normalizedIdentity = normalizeAnalyzedCouponIdentity(analyzed, fallback);
+  const { sourceName, redeemPlace, capacity, expiresOn, isGifteeBox } = normalizedIdentity;
 
   if (!sourceName || sourceName === '商品名不明' || isGenericSevenProductName(sourceName)) {
     throw new HttpError(422, '商品名を正しく確認できません。');
   }
   if (!redeemPlace) throw new HttpError(422, '引換先を確認できません。');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(422, '利用期限を確認できません。');
+  if (!isGifteeBox && !/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(422, '利用期限を確認できません。');
 
   const nameKey = couponIdentityKey(sourceName, capacity, redeemPlace, expiresOn);
   let coupon = await env.COUPON_DB.prepare(`
@@ -690,11 +721,11 @@ async function listCoupons(request, env) {
            COUNT(i.id) AS remaining_count,
            SUM(CASE WHEN i.reservation_id IS NULL OR i.reservation_expires_at <= ? THEN 1 ELSE 0 END) AS available_count
     FROM coupons c
-    JOIN coupon_expiries e ON e.coupon_id = c.id AND e.expires_on >= ?
+    JOIN coupon_expiries e ON e.coupon_id = c.id AND (e.expires_on = '' OR e.expires_on >= ?)
     JOIN coupon_items i ON i.expiry_id = e.id
     GROUP BY c.id, c.redeem_place, e.id
     HAVING COUNT(i.id) > 0
-    ORDER BY e.expires_on ASC, c.created_at ASC
+    ORDER BY CASE WHEN e.expires_on = '' THEN 1 ELSE 0 END, e.expires_on ASC, c.created_at ASC
   `).bind(now, today).all();
 
   const map = new Map();
@@ -1790,17 +1821,15 @@ async function analyzeAutoCoupon(request, env) {
   // 旧ロジックで「セブン-イレブン クーポン」等に誤分類されたURLを、
   // 同じURLの再共有だけで正しい商品情報へ修正できるようにする。
   const analyzed = await analyzeCouponForImport(urlValue, env);
-  const sourceName = normalizeSourceProductName(analyzed.sourceProductName || analyzed.product || '');
-  const redeemPlace = String(analyzed.redeemPlace || analyzed.merchant || '').trim();
-  const capacity = normalizeCouponCapacity(analyzed.capacity || analyzed.size || '', sourceName);
-  const expiresOn = String(analyzed.expiresOn || '').trim();
+  const normalizedIdentity = normalizeAnalyzedCouponIdentity(analyzed);
+  const { sourceName, redeemPlace, capacity, expiresOn, isGifteeBox } = normalizedIdentity;
 
   if (!sourceName || sourceName === '商品名不明' || isGenericSevenProductName(sourceName)) {
     throw new HttpError(422, '商品名を正しく確認できません。');
   }
   if (!redeemPlace) throw new HttpError(422, '引換先を確認できません。');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(422, '利用期限を確認できません。');
-  if (expiresOn < todayInTokyo()) throw new HttpError(422, '期限切れのクーポンは登録できません。');
+  if (!isGifteeBox && !/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new HttpError(422, '利用期限を確認できません。');
+  if (expiresOn && expiresOn < todayInTokyo()) throw new HttpError(422, '期限切れのクーポンは登録できません。');
 
   const identityKey = couponIdentityKey(sourceName, capacity, redeemPlace, expiresOn);
 
@@ -1927,7 +1956,7 @@ async function registerAutoCoupon(request, env) {
     { displayName: requestedDisplayName }
   );
 
-  if (identity.expiresOn < todayInTokyo()) {
+  if (identity.expiresOn && identity.expiresOn < todayInTokyo()) {
     throw new HttpError(422, '期限切れのクーポンは登録できません。');
   }
 
@@ -2145,9 +2174,9 @@ async function reserveCoupon(request, env, couponId) {
     WHERE id IN (
       SELECT i.id FROM coupon_items i
       JOIN coupon_expiries e ON e.id = i.expiry_id
-      WHERE e.coupon_id = ? AND e.expires_on >= ?
+      WHERE e.coupon_id = ? AND (e.expires_on = '' OR e.expires_on >= ?)
         AND (i.reservation_id IS NULL OR i.reservation_expires_at <= ?)
-      ORDER BY e.expires_on ASC, i.created_at ASC, i.id ASC
+      ORDER BY CASE WHEN e.expires_on = '' THEN 1 ELSE 0 END, e.expires_on ASC, i.created_at ASC, i.id ASC
       LIMIT ?
     )
     AND (reservation_id IS NULL OR reservation_expires_at <= ?)
