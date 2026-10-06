@@ -192,4 +192,24 @@ const groupedCoupon = list.coupons.find(coupon => coupon.id === urlCoupon.id);
 assert.equal(groupedCoupon.expiries.length, 2, '同じクーポンを期限ごとにまとめる');
 assert.deepEqual(groupedCoupon.expiries.map(expiry => expiry.expiresOn), ['2099-12-31', '2100-12-31']);
 
+// Lawson imports parse the login route but keep the original URL in storage.
+const lawsonCoupon = 'https://apli.lawson.jp/ldcp/coupon/?campaignId=testfixture&encDataCode=VEVTVEZJWFRVUkU%3D';
+const lawsonLogin = lawsonCoupon.replace('/coupon/', '/login/');
+env.COUPON_ANALYZER = { async fetch(input) {
+  const body = await input.json();
+  assert.equal(body.url, lawsonLogin);
+  return new Response(JSON.stringify({status:'ok',site:'lawson_ldcp',product:'テスト飲料',redeemPlace:'ローソン',expiresOn:'2099-11-30'}),{headers:{'content-type':'application/json'}});
+} };
+const lawsonAnalysis = await request('/api/coupons/analyze-auto', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:lawsonCoupon})});
+assert.equal(lawsonAnalysis.product, 'テスト飲料');
+assert.equal(lawsonAnalysis.redeemPlace, 'ローソン');
+const lawsonForm = new FormData();
+lawsonForm.set('name','ローソンテスト'); lawsonForm.set('type','url'); lawsonForm.set('expiresOn','2099-11-30');
+lawsonForm.set('coverImage',cover()); lawsonForm.set('urls',lawsonCoupon);
+await request('/api/coupons/register',{method:'POST',body:lawsonForm});
+const lawsonCard = (await request('/api/coupons')).coupons.find(c => c.name === 'ローソンテスト');
+const lawsonReserved = await request(`/api/coupons/${lawsonCard.id}/reserve`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({quantity:1})},201);
+assert.equal(lawsonReserved.targetUrl,lawsonLogin);
+assert.equal(db.database.prepare('SELECT url_value FROM coupon_items WHERE url_value=?').get(lawsonCoupon).url_value,lawsonCoupon);
+
 console.log('integration: all coupon flows passed');

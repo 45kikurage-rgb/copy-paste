@@ -1,8 +1,9 @@
 const RESERVATION_SECONDS = 10 * 60;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS_PER_REGISTRATION = 100;
+import { lawsonLoginUrl } from './lawson-url.js';
 const URL_RECONCILE_VERSION = '2026-09-24-v9-source-display';
-const COUPON_MANAGER_VERSION = '2026-10-04-giftee-grouping-v1';
+const COUPON_MANAGER_VERSION = '2026-10-07-lawson-ldcp-v1';
 
 export default {
   async fetch(request, env) {
@@ -806,6 +807,7 @@ async function fetchAnalyzerJson(env, path, body) {
 }
 
 function redeemPlaceForSite(site, brand = '') {
+  if (site === 'lawson_ldcp') return 'ローソン';
   if (site === 'seven') return 'セブンイレブン';
   if (site === 'familymart') return 'ファミリーマート';
   if (site === 'misterdonut') return 'ミスタードーナツ';
@@ -1735,7 +1737,7 @@ async function analyzeCouponForImport(urlValue, env) {
   const directMisterDonut = await analyzeMisterDonutDirectForImport(urlValue);
   if (directMisterDonut) return directMisterDonut;
 
-  const detail = await fetchAnalyzerJson(env, '/api/analyze-detail', { url: urlValue, mode: 'stable' });
+  const detail = await fetchAnalyzerJson(env, '/api/analyze-detail', { url: lawsonLoginUrl(urlValue) || urlValue, mode: 'stable' });
   if (detail.ok && detail.data?.status === 'ok') {
     return { ...detail.data, analysisMode: 'shared-analyzer' };
   }
@@ -2198,7 +2200,7 @@ async function reserveCoupon(request, env, couponId) {
     type: coupon.coupon_type,
     quantity,
     expiresAt,
-    targetUrl: coupon.coupon_type === 'url' ? items[0].url_value : null
+    targetUrl: coupon.coupon_type === 'url' ? lawsonLoginUrl(items[0].url_value) || items[0].url_value : null
   }, 201);
 }
 
