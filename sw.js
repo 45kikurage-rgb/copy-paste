@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v29-giftee-grouping';
+const CACHE='url-format-shisa-v30-calculator-rate';
 const CORE=[
   './',
   './index.html',
@@ -38,3 +38,4 @@ self.addEventListener('fetch',event=>{
     }).catch(()=>caches.match(event.request).then(response=>response||caches.match('./index.html')))
   );
 });
+

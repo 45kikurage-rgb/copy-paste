@@ -505,6 +505,8 @@ textarea::placeholder{color:#9b8f84;opacity:1}
 .calc-special-row{min-height:82px;grid-template-columns:auto 1fr;padding:0 14px;border-radius:13px;font-size:1.34rem}
 .calc-special-row span{padding:0;white-space:nowrap}
 .calc-special-amount{border-left:0;padding:0 0 0 16px;justify-content:flex-start}
+.calc-rate-select{min-width:0;min-height:44px;max-width:100%;padding:4px 2px;border:0;border-radius:7px;background:transparent;color:var(--text);font:inherit;font-weight:700;cursor:pointer}
+.calc-rate-select:focus-visible{outline:2px solid var(--border);outline-offset:2px}
 .calc-manage-inline{min-height:82px;font-size:1.34rem}
 .calc-control-v2{grid-template-columns:1fr 1fr;gap:8px}
 .unit-price-box,.calc-control-v2 .calc-back-inline{min-height:82px;font-size:1.34rem}
@@ -805,7 +807,13 @@ textarea::placeholder{color:#9b8f84;opacity:1}
     </div>
 
     <div class="calc-sub-actions">
-      <div class="calc-special-row"><span>８０％</span><output id="unit80" class="calc-special-amount">０円</output></div>
+      <div class="calc-special-row">
+        <select id="calcRate" class="calc-rate-select" aria-label="単価の計算割合">
+          <option value="80">８０％</option>
+          <option value="90">９０％</option>
+        </select>
+        <output id="unitRate" for="unitPrice calcRate" class="calc-special-amount" aria-live="polite">０円</output>
+      </div>
       <button class="calc-manage-inline" id="openQtyManagerBtn" type="button">表示本数管理</button>
     </div>
 
@@ -1192,7 +1200,8 @@ const openCalcBtn=document.getElementById('openCalcBtn');
 const calculatorScreen=document.getElementById('calculatorScreen');
 const qtyManagerScreen=document.getElementById('qtyManagerScreen');
 const unitPrice=document.getElementById('unitPrice');
-const unit80=document.getElementById('unit80');
+const calcRate=document.getElementById('calcRate');
+const unitRate=document.getElementById('unitRate');
 const calcLeftRows=document.getElementById('calcLeftRows');
 const calcRightRows=document.getElementById('calcRightRows');
 const openQtyManagerBtn=document.getElementById('openQtyManagerBtn');
@@ -1203,6 +1212,8 @@ const qtyManagerStatus=document.getElementById('qtyManagerStatus');
 const clearQtySelectionBtn=document.getElementById('clearQtySelectionBtn');
 const applyQtySelectionBtn=document.getElementById('applyQtySelectionBtn');
 const QTY_KEY='calc-display-qty-final-v1';
+const RATE_KEY='calc-rate-v1';
+try{calcRate.value=localStorage.getItem(RATE_KEY)==='90'?'90':'80'}catch(e){calcRate.value='80'}
 const DEFAULT_QTYS=[2,3,4,5,10,20,24,48,100,500];
 let selectedPreset=new Set();
 let displayQtys=loadDisplayQtys();
@@ -1263,7 +1274,8 @@ function updateCalculator(){
     const qty=Number(el.dataset.qty)||0;
     if(qty) el.textContent=calcYen(qty*unit);
   });
-  unit80.textContent=calcYen(unit*0.8);
+  const rate=calcRate.value==='90'?90:80;
+  unitRate.textContent=calcYen(unit*rate/100);
 }
 function openCalculator(){
   calculatorScreen.classList.add('is-open');
@@ -1321,6 +1333,10 @@ document.querySelectorAll('.jsCalcBack').forEach(btn=>btn.addEventListener('clic
 openQtyManagerBtn.addEventListener('click',openQtyManager);
 closeQtyManagerBtn.addEventListener('click',closeQtyManager);
 unitPrice.addEventListener('input',updateCalculator);
+calcRate.addEventListener('change',()=>{
+  try{localStorage.setItem(RATE_KEY,calcRate.value)}catch(e){}
+  updateCalculator();
+});
 renderCalcRows();
 
 if('serviceWorker' in navigator){
@@ -1332,3 +1348,4 @@ updateLineEncode();
 </script>
 </body>
 </html>
+
