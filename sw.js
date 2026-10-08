@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v30-calculator-rate';
+const CACHE='url-format-shisa-v31-calculator-both-rates';
 const CORE=[
   './',
   './index.html',
