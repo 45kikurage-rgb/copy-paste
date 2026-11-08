@@ -774,7 +774,7 @@ textarea::placeholder{color:#9b8f84;opacity:1}
         <span id="couponResultTime">確認時間 0秒</span>
       </div>
       <table class="coupon-table">
-        <thead><tr><th>商品名</th><th>容量</th><th>本数</th></tr></thead>
+        <thead><tr><th>商品名</th><th>容量</th><th>件数</th></tr></thead>
         <tbody id="couponResultRows"></tbody>
       </table>
       <p class="coupon-note" id="couponResultNote"></p>
@@ -1043,6 +1043,9 @@ const couponResultNote=document.getElementById('couponResultNote');
 const couponCheckError=document.getElementById('couponCheckError');
 const COUPON_ANALYZER_API='https://coupon-analyzer.45kikurage.workers.dev/api/analyze';
 const COUPON_ANALYZER_SITE='https://coupon-analyzer.45kikurage.workers.dev/';
+const COUPON_MAX_URLS=2000;
+const COUPON_BATCH_SIZE=100;
+const COUPON_NETWORK_RETRY_DELAYS=[1500,4000,4000,4000,4000];
 let couponCheckRunning=false;
 
 function openCouponModal(){
@@ -1061,14 +1064,30 @@ function setCouponProgress(done,total,label){
   couponProgressPercent.textContent=`${percent}%`;
   couponProgressBar.style.width=`${percent}%`;
 }
+function couponUrlSupported(url){
+  if(url.protocol!=='https:'||url.username||url.password||(url.port&&url.port!=='443'))return false;
+  const p=url.searchParams;
+  if(url.hostname==='coupon.sej.co.jp'&&url.pathname==='/order/cpnsp_03.do')return p.getAll('hansoku_id').length===1&&/^[A-Za-z0-9_-]{8,200}$/.test(p.get('hansoku_id'));
+  if(url.hostname==='ncpfa.famima.com'&&url.pathname==='/prd/ebcweb')return ['eKey','cpNo','gyNo'].every(key=>p.getAll(key).length===1)&&/^[A-Za-z0-9_-]{8,512}$/.test(p.get('eKey'))&&/^\d{1,6}$/.test(p.get('cpNo'))&&/^\d{1,6}$/.test(p.get('gyNo'))&&[...p.keys()].every(key=>['eKey','cpNo','gyNo'].includes(key));
+  if(url.hostname==='sbg.jp')return /^\/cp\/exchange\/\d{1,12}\/[a-f0-9]{32}\/?$/i.test(url.pathname)&&!url.search;
+  if(url.hostname==='coupon.petit.gift'){
+    if(url.pathname!=='/coupons/detail'||url.href.length>2048)return false;
+    const required={app_id:/^\d{1,12}$/,coupon_id:/^\d{1,12}$/,user_id:/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i,enc:/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/};
+    return Object.entries(required).every(([key,pattern])=>p.getAll(key).length===1&&pattern.test(p.get(key)))&&p.getAll('t').length<=1&&(!p.has('t')||/^\d{14}$/.test(p.get('t')))&&[...p.keys()].every(key=>Object.hasOwn(required,key)||key==='t');
+  }
+  if(url.hostname==='apli.lawson.jp'&&/^\/ldcp\/(?:coupon|login)\/?$/.test(url.pathname))return p.getAll('campaignId').length===1&&/^[A-Za-z0-9_-]{1,100}$/.test(p.get('campaignId'))&&p.getAll('encDataCode').length===1&&/^[A-Za-z0-9_+\/-]{8,512}={0,2}$/.test(p.get('encDataCode'));
+  if(url.hostname==='g4b.giftee.biz')return /^\/giftee_boxes\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?:\/(?:home|gifts))?\/?$/i.test(url.pathname)&&!url.search;
+  if(url.hostname==='misterdonut.e-gift.co')return /^\/c\/[A-Za-z0-9_-]{6,200}\/\d{1,8}\/?$/.test(url.pathname);
+  if(url.hostname==='gift.starbucks.co.jp')return /^\/e\/[A-Za-z0-9_-]{8,200}\/?$/.test(url.pathname);
+  return false;
+}
 function getCouponItems(){
   const seen=new Set();
   return extractPairs(input.value).flatMap((pair,index)=>{
     try{
-      const url=new URL(pair.url.replace(/[.,;]+$/,''));
-      const isSeven=url.protocol==='https:'&&url.hostname==='coupon.sej.co.jp'&&url.pathname==='/order/cpnsp_03.do'&&url.searchParams.has('hansoku_id');
-      const isFamima=url.protocol==='https:'&&url.hostname==='ncpfa.famima.com'&&url.pathname==='/prd/ebcweb'&&['eKey','cpNo','gyNo'].every(key=>url.searchParams.has(key));
-      if((!isSeven&&!isFamima)||seen.has(url.href))return[];
+      const value=pair.url.replaceAll('\\_','_').replace(/[.,;、。\])}]+$/,'');
+      const url=new URL(value);
+      if(!couponUrlSupported(url)||seen.has(url.href))return[];
       seen.add(url.href);
       const label=/^\d{1,5}$/.test(pair.num||'')?pair.num:String(index+1);
       return[{label,url:url.href}];
@@ -1078,37 +1097,49 @@ function getCouponItems(){
 function couponResolved(item){
   return item.status==='used'||(item.status==='ok'&&['350','500','other','none'].includes(item.size)&&item.product!=='商品名不明');
 }
-async function analyzeCouponPass(items,label){
-  const results=new Array(items.length);
-  let cursor=0;
-  let completed=0;
-  setCouponProgress(0,items.length,label);
-  async function worker(){
-    while(cursor<items.length){
-      const index=cursor++;
-      const item=items[index];
-      try{
-        const response=await fetch(COUPON_ANALYZER_API,{
-          method:'POST',
-          headers:{'content-type':'application/json'},
-          body:JSON.stringify({items:[item]})
-        });
-        const data=await response.json().catch(()=>({}));
-        if(!response.ok||!data.results?.[0])throw new Error(data.error||'確認に失敗しました');
-        results[index]=data.results[0];
-      }catch(error){
-        results[index]={...item,product:'商品名不明',size:'unknown',status:'error',message:error instanceof Error?error.message:'確認に失敗しました'};
+async function fetchCouponChunk(items){
+  for(let attempt=0;attempt<=COUPON_NETWORK_RETRY_DELAYS.length;attempt+=1){
+    try{
+      const response=await fetch(COUPON_ANALYZER_API,{
+        method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({items,mode:'stable'})
+      });
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok||!Array.isArray(data.results)){
+        const error=new Error(data.error||'解析結果を受信できませんでした');
+        error.retryable=response.status>=500||response.status===429||response.ok;
+        throw error;
       }
-      completed+=1;
-      setCouponProgress(completed,items.length,label);
+      return data.results;
+    }catch(error){
+      const retryable=error.retryable===true||error instanceof TypeError;
+      if(!retryable||attempt===COUPON_NETWORK_RETRY_DELAYS.length)throw error;
+      couponCheckPhase.textContent=`通信を再試行します（${attempt+1}/5）`;
+      await new Promise(resolve=>setTimeout(resolve,COUPON_NETWORK_RETRY_DELAYS[attempt]));
     }
   }
-  await Promise.all(Array.from({length:Math.min(4,items.length)},worker));
+}
+async function analyzeCouponPass(items,label){
+  const results=[];
+  setCouponProgress(0,items.length,label);
+  for(let offset=0;offset<items.length;offset+=COUPON_BATCH_SIZE){
+    const chunk=items.slice(offset,offset+COUPON_BATCH_SIZE);
+    try{
+      // The shared API retries unresolved URLs up to five times. Do not repeat
+      // successful API responses here and multiply the per-URL attempt count.
+      const response=await fetchCouponChunk(chunk);
+      const byUrl=new Map(response.filter(item=>item&&typeof item.url==='string').map(item=>[item.url,item]));
+      results.push(...chunk.map(item=>byUrl.has(item.url)?{...byUrl.get(item.url),...item}:{...item,product:'商品名不明',size:'unknown',status:'error',message:'解析結果を受信できませんでした'}));
+    }catch(error){
+      results.push(...chunk.map(item=>({...item,product:'商品名不明',size:'unknown',status:'error',message:error instanceof Error?error.message:'確認に失敗しました'})));
+    }
+    setCouponProgress(Math.min(offset+chunk.length,items.length),items.length,label);
+  }
   return results;
 }
 function addCouponResultRow(product,size,count){
   const row=document.createElement('tr');
-  [product,size,`${count}本`].forEach(value=>{
+  [product,size,`${count}件`].forEach(value=>{
     const cell=document.createElement('td');
     cell.textContent=value;
     row.appendChild(cell);
@@ -1123,6 +1154,8 @@ function renderCouponResults(items,elapsedMs){
     if(item.status==='used'){product='利用済み';size='—'}
     else if(couponResolved(item)){
       product=item.product;
+      const merchant=item.redeemPlace||item.merchant||'';
+      if(merchant)product+=`（${merchant}）`;
       size=item.size==='350'?'350ml':item.size==='500'?'500ml':item.size==='other'?(item.capacity||'その他'):item.size==='none'?'容量表記なし':'判定不能';
     }
     const key=`${product}\u0000${size}`;
@@ -1144,7 +1177,7 @@ function renderCouponResults(items,elapsedMs){
   couponResultTotal.textContent=`URL合計 ${items.length}件`;
   couponResultTime.textContent=`確認時間 ${Math.max(1,Math.round(elapsedMs/1000))}秒`;
   couponResultNote.textContent=unresolved
-    ? `${unresolved}件は2回再確認しても判定できませんでした。必要に応じて大元サイトで確認してください。`
+    ? `${unresolved}件は確認できませんでした（自動再試行は最大5回）。大元サイトで詳細を確認できます。`
     : 'すべての商品名と容量を確認できました。';
   couponCheckResult.hidden=false;
 }
@@ -1158,10 +1191,10 @@ async function runCouponCheck(){
   couponCheckX.disabled=true;
   couponCheckClose.disabled=true;
   couponCheckMain.disabled=true;
-  if(!items.length){
+  if(!items.length||items.length>COUPON_MAX_URLS){
     couponProgressBox.hidden=true;
     couponCheckPhase.textContent='確認できませんでした';
-    couponCheckError.textContent='貼り付け欄にセブンまたはファミマのクーポンURLが見つかりません。';
+    couponCheckError.textContent=items.length>COUPON_MAX_URLS?'解析は最大2,000件です。分けて貼り付けてください。':'対応するクーポンURLが見つかりません。セブン・ファミマ・SBギフト・プチギフトなどのURLを貼り付けてください。';
     couponCheckError.hidden=false;
     couponCheckX.disabled=false;
     couponCheckClose.disabled=false;
@@ -1170,15 +1203,7 @@ async function runCouponCheck(){
   }
   couponCheckRunning=true;
   const started=performance.now();
-  let finalByUrl=new Map();
-  let pending=items;
-  for(let pass=0;pass<=2&&pending.length;pass+=1){
-    const label=pass===0?'初回解析中':`再解析中（${pass}/2）`;
-    const passResults=await analyzeCouponPass(pending,label);
-    passResults.forEach(item=>finalByUrl.set(item.url,item));
-    pending=passResults.filter(item=>!couponResolved(item)).map(item=>({label:item.label,url:item.url}));
-  }
-  const ordered=items.map(item=>finalByUrl.get(item.url)||({...item,product:'商品名不明',size:'unknown',status:'error'}));
+  const ordered=await analyzeCouponPass(items,'解析中（失敗分は最大5回再試行）');
   setCouponProgress(items.length,items.length,'解析完了');
   renderCouponResults(ordered,performance.now()-started);
   couponCheckRunning=false;
@@ -1341,4 +1366,5 @@ updateLineEncode();
 </script>
 </body>
 </html>
+
 
