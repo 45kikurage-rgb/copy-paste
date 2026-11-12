@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v32-coupon-all-retry5';
+const CACHE='url-format-shisa-v33-asahi-coupon';
 const CORE=[
   './',
   './index.html',
@@ -38,5 +38,6 @@ self.addEventListener('fetch',event=>{
     }).catch(()=>caches.match(event.request).then(response=>response||caches.match('./index.html')))
   );
 });
+
 
 

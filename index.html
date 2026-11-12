@@ -1069,6 +1069,7 @@ function couponUrlSupported(url){
   const p=url.searchParams;
   if(url.hostname==='coupon.sej.co.jp'&&url.pathname==='/order/cpnsp_03.do')return p.getAll('hansoku_id').length===1&&/^[A-Za-z0-9_-]{8,200}$/.test(p.get('hansoku_id'));
   if(url.hostname==='ncpfa.famima.com'&&url.pathname==='/prd/ebcweb')return ['eKey','cpNo','gyNo'].every(key=>p.getAll(key).length===1)&&/^[A-Za-z0-9_-]{8,512}$/.test(p.get('eKey'))&&/^\d{1,6}$/.test(p.get('cpNo'))&&/^\d{1,6}$/.test(p.get('gyNo'))&&[...p.keys()].every(key=>['eKey','cpNo','gyNo'].includes(key));
+  if(url.hostname==='www.asahibeer-cp.jp')return !url.hash&&/^\/brand\/bitter-ist\/cp\/\d{6}-\d{6}-[a-z0-9]+\/coupon\/lw\/index\.html$/.test(url.pathname)&&p.getAll('code').length===1&&/^0\d{17}$/.test(p.get('code'))&&[...p.keys()].every(key=>key==='code');
   if(url.hostname==='sbg.jp')return /^\/cp\/exchange\/\d{1,12}\/[a-f0-9]{32}\/?$/i.test(url.pathname)&&!url.search;
   if(url.hostname==='coupon.petit.gift'){
     if(url.pathname!=='/coupons/detail'||url.href.length>2048)return false;
@@ -1366,5 +1367,6 @@ updateLineEncode();
 </script>
 </body>
 </html>
+
 
 

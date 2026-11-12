@@ -93,3 +93,12 @@ test('same product at different merchants is displayed as separate groups',()=>{
   assert.ok(rows[1].children[0].textContent.includes('店舗B'));
 });
 
+
+
+test('Asahi coupons preserve code zeros and enable analysis; invalid variants are rejected',()=>{
+ const app=setup(ok),url='https://www.asahibeer-cp.jp/brand/bitter-ist/cp/261111-261124-fixture/coupon/lw/index.html?code=000000000000000012';
+ app.input.value=url;assert.equal(app.getCouponItems().length,1);assert.equal(app.getCouponItems()[0].url,url);
+ for(const value of [url+'&code=000000000000000012',url+'&redeem=1',url.replace('www.asahibeer-cp.jp','www.asahibeer-cp.jp.evil.test')]){
+  app.input.value=value;assert.equal(app.getCouponItems().length,0);
+ }
+});
