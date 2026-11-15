@@ -15,7 +15,8 @@ function setup(respond){
     classList:{add(){},remove(){},contains(){return false;}},setAttribute(){},addEventListener(){},
     appendChild(child){this.children.push(child);}});
   const get=id=>{if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);};
-  const input={value:''};
+  const input={value:'',addEventListener(){}};
+  get('couponCopyCount').value='5';
   const context=vm.createContext({input,URL,performance:{now:()=>1000},TypeError,
     document:{getElementById:get,createElement:node,addEventListener(){}},window:{open(){}},
     setTimeout(fn,ms){delays.push(ms);fn();},
