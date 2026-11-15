@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v35-trade-nav-copy-limit';
+const CACHE='url-format-shisa-v36-trade-nav-banner-a';
 const CORE=[
   './',
   './index.html',
