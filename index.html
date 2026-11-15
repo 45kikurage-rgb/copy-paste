@@ -653,6 +653,7 @@ textarea::placeholder{color:#9b8f84;opacity:1}
 .coupon-error{margin-top:12px;padding:10px;border:2px solid #c98778;border-radius:12px;background:#fff0e9;color:#7d3529;font-weight:700}
 .coupon-copy-panel{margin-top:14px;padding:12px;border:2px solid rgba(140,119,98,.36);border-radius:14px;background:var(--btn-soft)}
 .coupon-copy-title{margin:0 0 9px;font-size:1rem}
+.coupon-copy-recommendation{display:inline-block;max-width:100%;font-size:.85rem;white-space:nowrap}
 .coupon-copy-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .coupon-copy-controls label{font-weight:700}
 .coupon-copy-controls input{width:90px;min-width:0;min-height:42px;padding:6px 10px;border:2px solid rgba(140,119,98,.5);border-radius:10px;background:#fffdf8;color:var(--text);font:inherit;font-size:1.15rem;text-align:center}
@@ -793,13 +794,14 @@ textarea::placeholder{color:#9b8f84;opacity:1}
     </div>
     <div class="coupon-error" id="couponCheckError" hidden></div>
     <section class="coupon-copy-panel" id="couponCopyPanel" aria-labelledby="couponCopyTitle" hidden>
-      <h3 class="coupon-copy-title" id="couponCopyTitle">指定個数ずつコピー</h3>
+      <h3 class="coupon-copy-title" id="couponCopyTitle">指定個数ずつコピー　<span class="coupon-copy-recommendation" id="couponCopyRecommendation">【取引ナビは0個】</span></h3>
       <div class="coupon-copy-controls">
         <label for="couponCopyCount">コピー個数</label>
-        <input id="couponCopyCount" type="text" inputmode="numeric" pattern="[0-9０-９]*" value="5" autocomplete="off" aria-describedby="couponCopyHelp">
+        <input id="couponCopyCount" type="text" inputmode="numeric" pattern="[0-9０-９]*" value="5" autocomplete="off" aria-describedby="couponCopyHelp couponCopyLimitNote">
         <span>個ずつ</span>
       </div>
       <p class="coupon-copy-help" id="couponCopyHelp">個数を変更するとボタンが切り替わります</p>
+      <p class="coupon-copy-help" id="couponCopyLimitNote"></p>
       <p class="coupon-copy-total" id="couponCopyTotal"></p>
       <div class="coupon-copy-buttons" id="couponCopyButtons" role="group" aria-label="コピーするURLの範囲"></div>
       <p class="coupon-copy-help">番号・URLの改行を保ってコピー</p>
@@ -1073,6 +1075,9 @@ const couponCopyCount=document.getElementById('couponCopyCount');
 const couponCopyButtons=document.getElementById('couponCopyButtons');
 const couponCopyStatus=document.getElementById('couponCopyStatus');
 const couponCopyTotal=document.getElementById('couponCopyTotal');
+const couponCopyRecommendation=document.getElementById('couponCopyRecommendation');
+const couponCopyLimitNote=document.getElementById('couponCopyLimitNote');
+const COUPON_COPY_CHARACTER_LIMIT=1024;
 const COUPON_ANALYZER_API='https://coupon-analyzer.45kikurage.workers.dev/api/analyze';
 const COUPON_ANALYZER_SITE='https://coupon-analyzer.45kikurage.workers.dev/';
 const COUPON_MAX_URLS=2000;
@@ -1091,12 +1096,42 @@ function resetCouponCopy(){
   couponCopyButtons.innerHTML='';
   couponCopyStatus.textContent='';
   couponCopyTotal.textContent='';
+  couponCopyRecommendation.textContent='【取引ナビは0個】';
+  couponCopyLimitNote.textContent='';
+}
+function formatCouponCopyItems(items){
+  return items.map(pair=>`${pair.num}\n\n${pair.url}`).join('\n\n');
+}
+function getCouponCopyRecommendation(items=couponCopyItems){
+  if(!items.length)return 0;
+  const prefix=[0];
+  for(const item of items){
+    const length=formatCouponCopyItems([item]).length;
+    if(length>COUPON_COPY_CHARACTER_LIMIT)return 0;
+    prefix.push(prefix[prefix.length-1]+length);
+  }
+  // 区切り位置が変わるため、候補個数ごとに実際の全範囲を確認します。
+  for(let size=items.length;size>=1;size-=1){
+    let fits=true;
+    for(let start=0;start<items.length;start+=size){
+      const end=Math.min(start+size,items.length);
+      const length=prefix[end]-prefix[start]+2*(end-start-1);
+      if(length>COUPON_COPY_CHARACTER_LIMIT){fits=false;break;}
+    }
+    if(fits)return size;
+  }
+  return 0;
 }
 function setCouponCopyItems(pairs,sourceText){
   couponCopyItems=pairs.map((pair,index)=>({num:pair.num||String(index+1),url:pair.url}));
   couponCopySource=sourceText;
   couponCopyPanel.hidden=couponCopyItems.length===0;
   couponCopyTotal.textContent=`コピー対象 ${couponCopyItems.length}件（整列後の並び順）`;
+  const recommended=getCouponCopyRecommendation();
+  couponCopyRecommendation.textContent=`【取引ナビは${recommended}個】`;
+  couponCopyLimitNote.textContent=recommended
+    ? '1024文字以内に収まる個数です（通し番号・URL・改行込み）。'
+    : couponCopyItems.length?'通し番号・改行込みで1件が1024文字を超えるため、取引ナビ向けの推奨個数は0個です。':'';
   renderCouponCopyButtons();
 }
 function renderCouponCopyButtons(){
@@ -1126,7 +1161,7 @@ async function copyCouponRange(start,end,button){
   const selected=couponCopyItems.slice(start,end);
   if(!selected.length)return;
   const version=couponCopyVersion;
-  const text=selected.map(pair=>`${pair.num}\n\n${pair.url}`).join('\n\n');
+  const text=formatCouponCopyItems(selected);
   let copied=false;
   try{
     await navigator.clipboard.writeText(text);
