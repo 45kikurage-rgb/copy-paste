@@ -653,7 +653,7 @@ textarea::placeholder{color:#9b8f84;opacity:1}
 .coupon-error{margin-top:12px;padding:10px;border:2px solid #c98778;border-radius:12px;background:#fff0e9;color:#7d3529;font-weight:700}
 .coupon-copy-panel{margin-top:14px;padding:12px;border:2px solid rgba(140,119,98,.36);border-radius:14px;background:var(--btn-soft)}
 .coupon-copy-title{margin:0 0 9px;font-size:1rem}
-.coupon-copy-recommendation{display:inline-block;max-width:100%;font-size:.85rem;white-space:nowrap}
+.coupon-copy-recommendation{display:block;box-sizing:border-box;max-width:100%;margin:0 0 10px;padding:10px 12px;border-left:6px solid #eb970d;border-radius:11px;background:linear-gradient(90deg,#ffe3a4,#ffefcb);color:var(--text);font-size:clamp(1.05rem,4.6vw,1.4rem);font-weight:800;line-height:1.5;text-align:center;white-space:normal;overflow-wrap:anywhere}
 .coupon-copy-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .coupon-copy-controls label{font-weight:700}
 .coupon-copy-controls input{width:90px;min-width:0;min-height:42px;padding:6px 10px;border:2px solid rgba(140,119,98,.5);border-radius:10px;background:#fffdf8;color:var(--text);font:inherit;font-size:1.15rem;text-align:center}
@@ -794,10 +794,11 @@ textarea::placeholder{color:#9b8f84;opacity:1}
     </div>
     <div class="coupon-error" id="couponCheckError" hidden></div>
     <section class="coupon-copy-panel" id="couponCopyPanel" aria-labelledby="couponCopyTitle" hidden>
-      <h3 class="coupon-copy-title" id="couponCopyTitle">指定個数ずつコピー　<span class="coupon-copy-recommendation" id="couponCopyRecommendation">【取引ナビは0個】</span></h3>
+      <h3 class="coupon-copy-title" id="couponCopyTitle">指定個数ずつコピー</h3>
+      <p class="coupon-copy-recommendation" id="couponCopyRecommendation" aria-live="polite">取引ナビは最大0個</p>
       <div class="coupon-copy-controls">
         <label for="couponCopyCount">コピー個数</label>
-        <input id="couponCopyCount" type="text" inputmode="numeric" pattern="[0-9０-９]*" value="5" autocomplete="off" aria-describedby="couponCopyHelp couponCopyLimitNote">
+        <input id="couponCopyCount" type="text" inputmode="numeric" pattern="[0-9０-９]*" value="5" autocomplete="off" aria-describedby="couponCopyRecommendation couponCopyHelp couponCopyLimitNote">
         <span>個ずつ</span>
       </div>
       <p class="coupon-copy-help" id="couponCopyHelp">個数を変更するとボタンが切り替わります</p>
@@ -1096,7 +1097,7 @@ function resetCouponCopy(){
   couponCopyButtons.innerHTML='';
   couponCopyStatus.textContent='';
   couponCopyTotal.textContent='';
-  couponCopyRecommendation.textContent='【取引ナビは0個】';
+  couponCopyRecommendation.textContent='取引ナビは最大0個';
   couponCopyLimitNote.textContent='';
 }
 function formatCouponCopyItems(items){
@@ -1128,7 +1129,7 @@ function setCouponCopyItems(pairs,sourceText){
   couponCopyPanel.hidden=couponCopyItems.length===0;
   couponCopyTotal.textContent=`コピー対象 ${couponCopyItems.length}件（整列後の並び順）`;
   const recommended=getCouponCopyRecommendation();
-  couponCopyRecommendation.textContent=`【取引ナビは${recommended}個】`;
+  couponCopyRecommendation.textContent=`取引ナビは最大${recommended}個`;
   couponCopyLimitNote.textContent=recommended
     ? '1024文字以内に収まる個数です（通し番号・URL・改行込み）。'
     : couponCopyItems.length?'通し番号・改行込みで1件が1024文字を超えるため、取引ナビ向けの推奨個数は0個です。':'';
