@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v33-asahi-coupon';
+const CACHE='url-format-shisa-v34-batch-copy';
 const CORE=[
   './',
   './index.html',

@@ -651,6 +651,17 @@ textarea::placeholder{color:#9b8f84;opacity:1}
 .coupon-table td:first-child{font-weight:700}
 .coupon-note{margin:10px 2px 0;color:var(--sub);font-size:.84rem;line-height:1.55}
 .coupon-error{margin-top:12px;padding:10px;border:2px solid #c98778;border-radius:12px;background:#fff0e9;color:#7d3529;font-weight:700}
+.coupon-copy-panel{margin-top:14px;padding:12px;border:2px solid rgba(140,119,98,.36);border-radius:14px;background:var(--btn-soft)}
+.coupon-copy-title{margin:0 0 9px;font-size:1rem}
+.coupon-copy-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.coupon-copy-controls label{font-weight:700}
+.coupon-copy-controls input{width:90px;min-width:0;min-height:42px;padding:6px 10px;border:2px solid rgba(140,119,98,.5);border-radius:10px;background:#fffdf8;color:var(--text);font:inherit;font-size:1.15rem;text-align:center}
+.coupon-copy-help,.coupon-copy-total,.coupon-copy-status{margin:8px 0 0;color:var(--sub);font-size:.8rem;line-height:1.5;overflow-wrap:anywhere}
+.coupon-copy-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:10px;max-height:220px;overflow:auto}
+.coupon-copy-buttons button{min-width:0;min-height:44px;padding:7px 3px;border:2px solid var(--btn);border-radius:11px;background:#fff4df;color:var(--text);font:inherit;font-size:1rem;font-weight:700;overflow-wrap:anywhere}
+.coupon-copy-buttons button.is-copied{background:var(--btn);color:#fff}
+.coupon-copy-panel input:focus-visible,.coupon-copy-buttons button:focus-visible{outline:3px solid #d8985d;outline-offset:2px}
+.coupon-copy-status{min-height:1.5em;color:var(--text);font-weight:700}
 .coupon-dialog-actions{display:grid;grid-template-columns:1fr 1.35fr;gap:8px;margin-top:14px}
 .coupon-dialog-actions button{
   min-height:48px;padding:8px;border:2px solid var(--btn);border-radius:12px;
@@ -663,6 +674,7 @@ textarea::placeholder{color:#9b8f84;opacity:1}
 @media(max-width:360px){
   .coupon-check-btn{padding-inline:6px;font-size:.66rem}
   .coupon-dialog{padding:12px}
+  .coupon-copy-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}
   .coupon-table th,.coupon-table td{padding:8px 5px;font-size:.82rem}
 }
 
@@ -780,6 +792,19 @@ textarea::placeholder{color:#9b8f84;opacity:1}
       <p class="coupon-note" id="couponResultNote"></p>
     </div>
     <div class="coupon-error" id="couponCheckError" hidden></div>
+    <section class="coupon-copy-panel" id="couponCopyPanel" aria-labelledby="couponCopyTitle" hidden>
+      <h3 class="coupon-copy-title" id="couponCopyTitle">指定個数ずつコピー</h3>
+      <div class="coupon-copy-controls">
+        <label for="couponCopyCount">コピー個数</label>
+        <input id="couponCopyCount" type="text" inputmode="numeric" pattern="[0-9０-９]*" value="5" autocomplete="off" aria-describedby="couponCopyHelp">
+        <span>個ずつ</span>
+      </div>
+      <p class="coupon-copy-help" id="couponCopyHelp">個数を変更するとボタンが切り替わります</p>
+      <p class="coupon-copy-total" id="couponCopyTotal"></p>
+      <div class="coupon-copy-buttons" id="couponCopyButtons" role="group" aria-label="コピーするURLの範囲"></div>
+      <p class="coupon-copy-help">番号・URLの改行を保ってコピー</p>
+      <p class="coupon-copy-status" id="couponCopyStatus" role="status" aria-live="polite"></p>
+    </section>
     <div class="coupon-dialog-actions">
       <button class="coupon-close-btn" id="couponCheckClose" type="button">閉じる</button>
       <button class="coupon-main-btn" id="couponCheckMain" type="button">大元サイトで詳しく見る</button>
@@ -946,6 +971,7 @@ function clearAll(){
   output.value='';
   count.textContent='０件';
   status.textContent='';
+  resetCouponCopy();
   input.focus();
 }
 
@@ -956,6 +982,7 @@ pasteInputBtn.addEventListener('click',async()=>{
     const text=await navigator.clipboard.readText();
     input.value=text;
     format();
+    resetCouponCopy();
     status.textContent='貼りつけました！';
   }catch(e){
     input.focus();
@@ -1041,12 +1068,101 @@ const couponResultTime=document.getElementById('couponResultTime');
 const couponResultRows=document.getElementById('couponResultRows');
 const couponResultNote=document.getElementById('couponResultNote');
 const couponCheckError=document.getElementById('couponCheckError');
+const couponCopyPanel=document.getElementById('couponCopyPanel');
+const couponCopyCount=document.getElementById('couponCopyCount');
+const couponCopyButtons=document.getElementById('couponCopyButtons');
+const couponCopyStatus=document.getElementById('couponCopyStatus');
+const couponCopyTotal=document.getElementById('couponCopyTotal');
 const COUPON_ANALYZER_API='https://coupon-analyzer.45kikurage.workers.dev/api/analyze';
 const COUPON_ANALYZER_SITE='https://coupon-analyzer.45kikurage.workers.dev/';
 const COUPON_MAX_URLS=2000;
 const COUPON_BATCH_SIZE=100;
 const COUPON_NETWORK_RETRY_DELAYS=[1500,4000,4000,4000,4000];
 let couponCheckRunning=false;
+let couponCopyItems=[];
+let couponCopySource='';
+let couponCopyVersion=0;
+
+function resetCouponCopy(){
+  couponCopyVersion+=1;
+  couponCopyItems=[];
+  couponCopySource='';
+  couponCopyPanel.hidden=true;
+  couponCopyButtons.innerHTML='';
+  couponCopyStatus.textContent='';
+  couponCopyTotal.textContent='';
+}
+function setCouponCopyItems(pairs,sourceText){
+  couponCopyItems=pairs.map((pair,index)=>({num:pair.num||String(index+1),url:pair.url}));
+  couponCopySource=sourceText;
+  couponCopyPanel.hidden=couponCopyItems.length===0;
+  couponCopyTotal.textContent=`コピー対象 ${couponCopyItems.length}件（整列後の並び順）`;
+  renderCouponCopyButtons();
+}
+function renderCouponCopyButtons(){
+  couponCopyVersion+=1;
+  couponCopyButtons.innerHTML='';
+  couponCopyStatus.textContent='';
+  const raw=couponCopyCount.value.trim().replace(/[０-９]/g,char=>String.fromCharCode(char.charCodeAt(0)-0xFEE0));
+  const size=Number(raw);
+  if(!/^\d+$/.test(raw)||!Number.isSafeInteger(size)||size<1){
+    couponCopyCount.setAttribute('aria-invalid','true');
+    couponCopyStatus.textContent='コピー個数は1以上の整数を入力してください。';
+    return;
+  }
+  couponCopyCount.setAttribute('aria-invalid','false');
+  for(let start=0;start<couponCopyItems.length;start+=size){
+    const end=Math.min(start+size,couponCopyItems.length);
+    const button=document.createElement('button');
+    button.type='button';
+    button.textContent=`${start+1}–${end}`;
+    button.setAttribute('aria-label',`${start+1}件目から${end}件目をコピー（${end-start}件）`);
+    button.addEventListener('click',()=>copyCouponRange(start,end,button));
+    couponCopyButtons.appendChild(button);
+  }
+}
+async function copyCouponRange(start,end,button){
+  if(couponCopySource!==input.value){resetCouponCopy();return;}
+  const selected=couponCopyItems.slice(start,end);
+  if(!selected.length)return;
+  const version=couponCopyVersion;
+  const text=selected.map(pair=>`${pair.num}\n\n${pair.url}`).join('\n\n');
+  let copied=false;
+  try{
+    await navigator.clipboard.writeText(text);
+    copied=true;
+  }catch(error){
+    if(version!==couponCopyVersion||couponCopySource!==input.value)return;
+    const temporary=document.createElement('textarea');
+    const focused=document.activeElement;
+    const scrollTop=couponCopyPanel.parentElement?.scrollTop;
+    temporary.value=text;
+    temporary.setAttribute('readonly','');
+    temporary.setAttribute('aria-label','コピーする内容');
+    temporary.style.cssText='position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;';
+    try{
+      couponCopyPanel.appendChild(temporary);
+      temporary.focus({preventScroll:true});
+      temporary.select();
+      temporary.setSelectionRange(0,text.length);
+      copied=document.execCommand('copy')===true;
+    }catch(fallbackError){copied=false;}
+    finally{
+      temporary.remove();
+      focused?.focus({preventScroll:true});
+      if(couponCopyPanel.parentElement&&scrollTop!==undefined)couponCopyPanel.parentElement.scrollTop=scrollTop;
+    }
+  }
+  if(version!==couponCopyVersion||couponCopySource!==input.value)return;
+  if(copied){
+    button.classList.add('is-copied');
+    couponCopyStatus.textContent=`${start+1}–${end}をコピーしました（${selected.length}件）`;
+  }else{
+    couponCopyStatus.textContent='コピーできませんでした。もう一度ボタンを押してください。';
+  }
+}
+couponCopyCount.addEventListener('input',renderCouponCopyButtons);
+input.addEventListener('input',resetCouponCopy);
 
 function openCouponModal(){
   couponCheckModal.classList.add('is-open');
@@ -1184,6 +1300,9 @@ function renderCouponResults(items,elapsedMs){
 }
 async function runCouponCheck(){
   if(couponCheckRunning)return;
+  resetCouponCopy();
+  const copySource=input.value;
+  const copyPairs=extractPairs(copySource);
   const items=getCouponItems();
   openCouponModal();
   couponCheckError.hidden=true;
@@ -1207,6 +1326,7 @@ async function runCouponCheck(){
   const ordered=await analyzeCouponPass(items,'解析中（失敗分は最大5回再試行）');
   setCouponProgress(items.length,items.length,'解析完了');
   renderCouponResults(ordered,performance.now()-started);
+  if(input.value===copySource)setCouponCopyItems(copyPairs,copySource);
   couponCheckRunning=false;
   couponCheckX.disabled=false;
   couponCheckClose.disabled=false;
