@@ -257,10 +257,10 @@ test('UTF-16 surrogate pairs are conservatively counted as two characters',()=>{
 test('recommendation and no-fit explanation are displayed without changing the manually entered copy count',()=>{
   const app=setup();app.get('couponCopyCount').value='7';
   setCopyItems(app,[pairWithUrlLength(30,'1'),pairWithUrlLength(30,'2')]);
-  assert.equal(app.get('couponCopyRecommendation').textContent,'【取引ナビは2個】');
+  assert.equal(app.get('couponCopyRecommendation').textContent,'取引ナビは最大2個');
   assert.equal(app.get('couponCopyCount').value,'7');
   setCopyItems(app,[pairWithUrlLength(1022,'1')]);
-  assert.equal(app.get('couponCopyRecommendation').textContent,'【取引ナビは0個】');
+  assert.equal(app.get('couponCopyRecommendation').textContent,'取引ナビは最大0個');
   assert.match(app.get('couponCopyLimitNote').textContent,/1[,.]?024/);
   assert.match(app.get('couponCopyLimitNote').textContent,/1件|1個|超|収ま|でき/);
   assert.equal(app.get('couponCopyCount').value,'7');
