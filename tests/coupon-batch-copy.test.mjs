@@ -185,3 +185,94 @@ test('2000 URLs partition without lost or repeated items',async()=>{
   for(const button of rangeButtons(app))await button.dispatch('click');
   assert.equal(app.writes.join('\n\n'),fixture(2000));
 });
+
+const pairWithUrlLength=(length,num='1')=>({num,url:'https://example.test/'+ 'a'.repeat(length-'https://example.test/'.length)});
+const copyText=items=>items.map(item=>`${item.num}\n\n${item.url}`).join('\n\n');
+const recommendation=(app,items)=>app.run(`getCouponCopyRecommendation(${JSON.stringify(items)})`);
+function setCopyItems(app,items){
+  app.setInput(copyText(items));
+  app.run(`setCouponCopyItems(${JSON.stringify(items)},input.value)`);
+}
+function allowedByEveryCopiedRange(items,count){
+  for(let offset=0;offset<items.length;offset+=count){
+    if(copyText(items.slice(offset,offset+count)).length>1024)return false;
+  }
+  return true;
+}
+
+test('recommendation uses the exact copied number/URL/blank-line string',()=>{
+  const app=setup();
+  const pairs=[pairWithUrlLength(30,'007'),pairWithUrlLength(30,'21')];
+  assert.equal(app.run(`formatCouponCopyItems(${JSON.stringify(pairs)})`),copyText(pairs));
+  assert.equal(recommendation(app,[]),0);
+  assert.equal(app.run('formatCouponCopyItems([])'), '');
+});
+
+test('a single copied item at 1024 characters is safe and 1025 has no safe recommendation',()=>{
+  const app=setup(),atLimit=pairWithUrlLength(1021,'7'),overLimit=pairWithUrlLength(1022,'7');
+  assert.equal(copyText([atLimit]).length,1024);assert.equal(copyText([overLimit]).length,1025);
+  assert.equal(recommendation(app,[atLimit]),1);assert.equal(recommendation(app,[overLimit]),0);
+  assert.equal(recommendation(app,[pairWithUrlLength(25),overLimit,pairWithUrlLength(25)]),0);
+});
+
+test('pair separators and serial-number digits count toward the 1024-character boundary',()=>{
+  const app=setup(),twoSingles=[pairWithUrlLength(508,'8'),pairWithUrlLength(508,'9')];
+  assert.equal(copyText(twoSingles).length,1024);assert.equal(recommendation(app,twoSingles),2);
+  const longerSerial=[twoSingles[0],{...twoSingles[1],num:'10'}];
+  assert.equal(copyText(longerSerial).length,1025);assert.equal(recommendation(app,longerSerial),1);
+  const longerUrl=[twoSingles[0],pairWithUrlLength(509,'9')];
+  assert.equal(copyText(longerUrl).length,1025);assert.equal(recommendation(app,longerUrl),1);
+});
+
+test('recommendation checks nonmonotonic partition boundaries instead of stopping at the first failure',()=>{
+  const app=setup();
+  // Weights include the pair text and its following separator. At count 2,
+  // the middle long URLs share a range; at count 3 they fall on opposite sides.
+  const pairs=[100,100,600,600,100,100].map((weight,i)=>pairWithUrlLength(weight-5,String(i+1)));
+  assert.equal(allowedByEveryCopiedRange(pairs,2),false);
+  assert.equal(allowedByEveryCopiedRange(pairs,3),true);
+  assert.equal(recommendation(app,pairs),3);
+});
+
+test('a long final URL is checked in its actual range and can remain a one-item remainder',()=>{
+  const app=setup(),pairs=[...Array.from({length:5},(_,i)=>pairWithUrlLength(30,String(i+1))),pairWithUrlLength(1021,'6')];
+  assert.equal(allowedByEveryCopiedRange(pairs,2),false);
+  assert.equal(allowedByEveryCopiedRange(pairs,5),true);
+  assert.equal(recommendation(app,pairs),5);
+});
+
+test('all short URLs can be recommended together',()=>{
+  const app=setup(),pairs=Array.from({length:24},(_,i)=>pairWithUrlLength(25,String(i+1)));
+  assert.ok(copyText(pairs).length<=1024);assert.equal(recommendation(app,pairs),24);
+});
+
+test('UTF-16 surrogate pairs are conservatively counted as two characters',()=>{
+  const app=setup(),pair=pairWithUrlLength(1021,'7');
+  pair.url=pair.url.slice(0,-1)+'😀';
+  assert.equal(copyText([pair]).length,1025);
+  assert.equal(Array.from(copyText([pair])).length,1024);
+  assert.equal(recommendation(app,[pair]),0);
+});
+
+test('recommendation and no-fit explanation are displayed without changing the manually entered copy count',()=>{
+  const app=setup();app.get('couponCopyCount').value='7';
+  setCopyItems(app,[pairWithUrlLength(30,'1'),pairWithUrlLength(30,'2')]);
+  assert.equal(app.get('couponCopyRecommendation').textContent,'【取引ナビは2個】');
+  assert.equal(app.get('couponCopyCount').value,'7');
+  setCopyItems(app,[pairWithUrlLength(1022,'1')]);
+  assert.equal(app.get('couponCopyRecommendation').textContent,'【取引ナビは0個】');
+  assert.match(app.get('couponCopyLimitNote').textContent,/1[,.]?024/);
+  assert.match(app.get('couponCopyLimitNote').textContent,/1件|1個|超|収ま|でき/);
+  assert.equal(app.get('couponCopyCount').value,'7');
+});
+
+test('mixed URL lengths always produce the largest safe grouping across all generated ranges',()=>{
+  const app=setup();
+  for(let seed=1;seed<=12;seed+=1){
+    const pairs=Array.from({length:18},(_,i)=>pairWithUrlLength(25+((i*173+seed*97)%640),String(i+seed*99)));
+    const expected=Array.from({length:pairs.length},(_,i)=>i+1).filter(count=>allowedByEveryCopiedRange(pairs,count)).at(-1)||0;
+    const actual=recommendation(app,pairs);
+    assert.equal(actual,expected,`mixed lengths seed ${seed}`);
+    if(actual)assert.equal(allowedByEveryCopiedRange(pairs,actual),true);
+  }
+});

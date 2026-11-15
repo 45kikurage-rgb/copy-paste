@@ -1,4 +1,4 @@
-const CACHE='url-format-shisa-v34-batch-copy';
+const CACHE='url-format-shisa-v35-trade-nav-copy-limit';
 const CORE=[
   './',
   './index.html',
